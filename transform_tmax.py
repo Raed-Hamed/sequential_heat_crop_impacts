@@ -30,7 +30,7 @@ lon_tmax[0:360] =  lon_tmax[0:360]-360
 
 for idx_file, file in enumerate(files):
     ds = xr.open_dataset(Path(path_tmax, file))
-    tmax = np.roll(ds_test.tmax.values, 360, axis=2)
+    tmax = np.roll(ds.tmax.values, 360, axis=2)
     output_path = Path('/Users/carmensteinmann/Documents/CLIMADA/own_projects/sequential_heat_crop_impacts/data/output/tmax180')
     ds_output = xr.Dataset(data_vars=dict(tmax=(["time", "lat", "lon"], tmax)),
                            coords=dict(
