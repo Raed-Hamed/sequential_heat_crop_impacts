@@ -40,8 +40,6 @@ files.sort()
 #get data dimensions from one tmax file
 ds_test = xr.open_dataset(Path(path_tmax, files[0]))
 tmax_test = ds_test.tmax.values
-tmax_test2 = np.empty(np.append(ds_test.tmax.values.shape, 1))
-tmax_test2[:,grid_cells[0], grid_cells[1],0] = ds_test.tmax.values[:,grid_cells[0], grid_cells[1]]
 lat_tmax = ds_test.lat.values
 lon_tmax = ds_test.lon.values
 
@@ -113,97 +111,16 @@ ds_output.close()
 
 
 #test 
-# test_kdd = sum_kdd_summer[6,107,491]
-# year = 6
-# lat = 107
-# lon = 491
-# harvest_grid_cell = harvest_end_mean[lat, lon]
-# day_summer_start = int(harvest_grid_cell-summer_start)
-# day_summer_end = int(harvest_grid_cell-summer_end)
-# kdd_summer_gridcell = tmax[day_summer_start:day_summer_end, lat, lon, :] - t_high_summer
-# kdd_summer_gridcell[kdd_summer_gridcell<=0] = 0
-# kdd_summer_gridcell[np.isnan(kdd_summer_gridcell)] = 0
-# size_kdd = kdd_summer_gridcell.shape
-# total_kdd = np.sum(kdd_summer_gridcell, axis=0)
-
-
-
-
-# ds_test_output= xr.open_dataset(Path(output_path, filename_output))
-
-
-
-# #compute temperatures over t_high_spring and t_high_summer for one file
-# kdd_spring_idx = np.where(~np.isnan(tmax_test)) and np.where((tmax_test >= t_high_spring))
-# tmax_over_t_high_spring = np.empty(tmax_test.shape)
-# tmax_over_t_high_spring[kdd_spring_idx] = tmax_test[kdd_spring_idx] - t_high_spring
-
-# kdd_summer_idx = np.where(~np.isnan(tmax_test)) and np.where((tmax_test >= t_high_summer))
-# tmax_over_t_high_summer = np.empty(tmax_test.shape)
-# tmax_over_t_high_summer[kdd_summer_idx] = tmax_test[kdd_summer_idx] - t_high_summer
-
-# #compute temperatures over t_high_spring and t_high_summer
-# kdd_spring_idx = np.where(~np.isnan(tmax[:, grid_cells[0],grid_cells[1], :])) and np.where((tmax >= t_high_spring))
-# tmax_over_t_high_spring = np.empty(tmax.shape)
-# tmax_over_t_high_spring[kdd_spring_idx] = tmax[kdd_spring_idx] - t_high_spring
-
-# kdd_summer_idx = np.where(~np.isnan(tmax)) and np.where((tmax >= t_high_summer))
-# tmax_over_t_high_summer = np.empty(tmax.shape)
-# tmax_over_t_high_summer[kdd_summer_idx] = tmax[kdd_summer_idx] - t_high_summer
-
-
-
-
-
-    # kdd_spring_idx = np.where(~np.isnan(tmax[
-    #     day_spring_start:day_spring_end, lat, lon, :])) and np.where((tmax[
-    #         day_spring_start:day_spring_end, lat, lon, :] >= t_high_spring))
-    # sum_kdd_spring[lat, lon, :] = np.sum(tmax_over_t_high_spring[
-    #     int(harvest_grid_cell-spring_start):int(harvest_grid_cell-spring_end), lat, lon])
-    # sum_kdd_summer[lat, lon, :] = np.sum(tmax_over_t_high_summer[
-    #     int(harvest_grid_cell-summer_start):int(harvest_grid_cell-summer_end), lat, lon])
-
-
-#harvest_end_mean[~np.isnan(harvest_end_mean)]
-
-# mask_summer = np.empty(360,720,30)
-# mask_summer_lat = np.ones(lat_test)
-# mask_summer_lon = np.ones(lon_test)
-
-# harvest_end = np.ones((360, 720), dtype=int)
-# harvest_end[:,:] = int(222)
-
-# crop_maps = np.ones((360, 720, 2), dtype=int)
-# crop_maps[:,:,0] = int(244)
-# crop_maps[:,:,1] = int(303)
-# seasons = np.empty(tmax_test.shape)
-# #seasons[crop_maps[:,:,0]] = 1
-# seasons[crop_maps] = 1
-# seasons[90:120, :, :] = 1
-
-
-# tmax_spring = tmax_test[start_spring:end_spring+1, :, :]
-# tmax_summer = tmax_test[start_summer:end_summer+1, :, :]
-
-# harvest_day = 300
-# summer_duration = 30
-# tmax_spring = tmax_test[harvest_day-summer_duration:harvest_day, :, :]
-# tmax_summer = tmax_test[start_summer:end_summer+1, :, :]
-
-#per year
-# kdd_spring_idx = np.where(~np.isnan(tmax_spring)) and np.where((tmax_spring >= t_high_spring))
-
-
-
-# sum_kdd_spring = np.sum(tmax_over_t_high, axis=0)
-
-# fig = plt.figure()
-# ax = fig.add_subplot(111)
-# m = Basemap(projection='lcc', resolution='c',
-#             width=8E6, height=8E6,
-#             lat_0=45, lon_0=-100,)
-# m.shadedrelief(scale=0.5)
-# m.pcolormesh(lon, lat, temp_anomaly,
-#               latlon=True, cmap='RdBu_r')
-# plt.clim(-8, 8)
-# m.drawcoastlines(color='lightgray')
+#491-360
+test_kdd = sum_kdd_summer[6,107,131]
+year = 6
+lat = 107
+lon = 131
+harvest_grid_cell = harvest_end_mean[lat, lon]
+day_summer_start = int(harvest_grid_cell-summer_start)
+day_summer_end = int(harvest_grid_cell-summer_end)
+kdd_summer_gridcell = tmax[day_summer_start:day_summer_end, lat, lon, :] - t_high_summer
+kdd_summer_gridcell[kdd_summer_gridcell<=0] = 0
+#kdd_summer_gridcell[np.isnan(kdd_summer_gridcell)] = 0
+size_kdd = kdd_summer_gridcell.shape
+total_kdd = np.sum(kdd_summer_gridcell, axis=0)
