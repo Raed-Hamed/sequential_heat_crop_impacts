@@ -12,21 +12,29 @@ import numpy as np
 import pandas as pd
 
 """Thresholds and data paths"""
-#temperatur thresholds for spring and summer temperatures
-t_high_spring = 24
-t_high_summer = 31
+#temperatur thresholds for spring and summer kdd and gdd
+T_BASE_SPRING = 0
+T_OPTIMUM_SPRING = 22
+T_HIGH_SPRING = 24
+
+T_BASE_SUMMER = 10
+T_OPTIMUM_SUMMER = 21
+T_HIGH_SUMMER = 31
+
+GDD_MAX_SPRING = T_OPTIMUM_SPRING-T_BASE_SPRING
+GDD_MAX_SUMMER = T_OPTIMUM_SUMMER-T_BASE_SUMMER
 
 #number of days prior to the harvest day
-spring_start = 90
-spring_end = 60
-summer_start = 50
-summer_end = 20
+SPRING_START = 90
+SPRING_END = 60
+SUMMER_START = 50
+SUMMER_END = 20
 
 #specify temperature and soil data path and harvest date file
 path_tmax =  Path('/Users/carmensteinmann/Documents/CLIMADA/own_projects/sequential_heat_crop_impacts/data/output/tmax180')
-# path_moisture = Path('/Users/carmensteinmann/Documents/CLIMADA/own_projects/sequential_heat_crop_impacts/data/soil_moisture')
+path_tmin =  Path('/Users/carmensteinmann/Documents/CLIMADA/own_projects/sequential_heat_crop_impacts/data/output/tmin180') 
 path_crop_map = Path('/Users/carmensteinmann/Documents/CLIMADA/own_projects/sequential_heat_crop_impacts/data/crop_maps/sacks_wheat_winter.harvest.doy.I.nc')
-
+# path_moisture = Path('/Users/carmensteinmann/Documents/CLIMADA/own_projects/sequential_heat_crop_impacts/data/soil_moisture')
 
 """Read data files"""
 #grid cells with a harvest day
@@ -34,73 +42,113 @@ ds_harvest = xr.open_dataset(path_crop_map)
 harvest_end_mean = ds_harvest['harvest.mean'].values
 grid_cells = np.where(~np.isnan(harvest_end_mean))
 
-#read tmax files
-files = [f.name for f in path_tmax.iterdir() if f.is_file() and not f.name.startswith('.')]
-files.sort()
-#get data dimensions from one tmax file
-ds_test = xr.open_dataset(Path(path_tmax, files[0]))
-tmax_test = ds_test.tmax.values
-lat_tmax = ds_test.lat.values
-lon_tmax = ds_test.lon.values
-
-#load temperature data for all years
-nr_years_tmax= len(files)
-tmax = np.empty(np.append(ds_test.tmax.values.shape, nr_years_tmax))
-time = []
-for idx_file, file in enumerate(files):
-    ds = xr.open_dataset(Path(path_tmax, file))
-    tmax[:, grid_cells[0],grid_cells[1], idx_file] = ds.tmax.values[:,grid_cells[0], grid_cells[1]]
-    time.append(str(pd.to_datetime(ds.time.values[0]).year))
-
-#load soil moisture data
-# moisture = None
-
-"""Compute kdd for summer and spring for all grid cells with a harvest date"""
-sum_kdd_spring = np.empty((nr_years_tmax, 360, 720))
-sum_kdd_spring[:,:,:] = np.nan
-sum_kdd_summer = np.empty((nr_years_tmax, 360, 720))
-sum_kdd_summer[:,:,:] = np.nan
-
-# nr_years_moisture = 30
-# moisture_spring = np.zeros((nr_years_moisture, 360, 720))
-# moisture_summer = np.zeros((nr_years_moisture, 360, 720))
-
-for idx, _ in enumerate(grid_cells[0]):
-    #grid cell
-    lat = grid_cells[0][idx]
-    lon = grid_cells[1][idx]
-    harvest_grid_cell = harvest_end_mean[lat, lon]
-
-    #kdd spring
-    day_spring_start = int(harvest_grid_cell-spring_start)
-    day_spring_end = int(harvest_grid_cell-spring_end)
-    kdd_spring_gridcell = tmax[day_spring_start:day_spring_end, lat, lon, :] - t_high_spring
-    kdd_spring_gridcell[kdd_spring_gridcell<=0] = 0
-    #kdd_spring_gridcell[np.isnan(kdd_spring_gridcell)] = 0
-    sum_kdd_spring[:, lat, lon] = np.sum(kdd_spring_gridcell, axis=0)
-
-    #kdd summer
-    day_summer_start = int(harvest_grid_cell-summer_start)
-    day_summer_end = int(harvest_grid_cell-summer_end)
-    kdd_summer_gridcell = tmax[day_summer_start:day_summer_end, lat, lon, :] - t_high_summer
-    kdd_summer_gridcell[kdd_summer_gridcell<=0] = 0
-    #kdd_summer_gridcell[np.isnan(kdd_summer_gridcell)] = 0
-    sum_kdd_summer[:, lat, lon] = np.sum(kdd_summer_gridcell, axis=0)
+def read_t_data(path, variable):
+    #read tmax files
+    files = [f.name for f in path.iterdir() if f.is_file() and not f.name.startswith('.')]
+    files.sort()
+    #get data dimensions from one tmax file
+    ds_test = xr.open_dataset(Path(path, files[0]))
+    lat_tmax = ds_test.lat.values
+    lon_tmax = ds_test.lon.values
     
-    # #soil moisture
-    # moisture_spring_gridcell = moisture[day_spring_start:day_spring_end, lat, lon, :]
-    # moisture_spring[:,lat, lon] = np.mean(moisture_spring_gridcell, axis=0)
-    # moisture_summer_gridcell = moisture[day_summer_start:day_summer_end, lat, lon, :]
-    # moisture_summer[:,lat, lon] = np.mean(moisture_summer_gridcell, axis=0)
+    #load temperature data for all years
+    nr_years_tmax= len(files)
+    tmax = np.empty(np.append(ds_test[variable].values.shape, nr_years_tmax))
+    time = []
+    for idx_file, file in enumerate(files):
+        ds = xr.open_dataset(Path(path, file))
+        tmax[:, grid_cells[0],grid_cells[1], idx_file] = ds[variable].values[:,grid_cells[0], grid_cells[1]]
+        time.append(str(pd.to_datetime(ds.time.values[0]).year))
+        ds.close()
+        
+    return tmax, lat_tmax, lon_tmax, time
 
+
+def kdd_gdd_per_gridcell(grid_cells, tmax, tmin):
+    """Compute kdd for summer and spring for all grid cells with a harvest date"""
+    nr_years = tmax.shape[3]
+    nr_lon = tmax.shape[2]
+    nr_lat = tmax.shape[1]
+    
+    shape_kdd = (nr_years, nr_lat, nr_lon)
+    
+    sum_kdd_spring = np.empty(shape_kdd)
+    sum_kdd_spring[:,:,:] = np.nan
+    sum_kdd_summer = np.empty(shape_kdd)
+    sum_kdd_summer[:,:,:] = np.nan
+    
+    gdd_spring = np.empty(shape_kdd)
+    gdd_spring[:,:,:] = np.nan
+    gdd_summer = np.empty(shape_kdd)
+    gdd_summer[:,:,:] = np.nan
+    
+    # nr_years_moisture = 30
+    # moisture_spring = np.zeros((nr_years_moisture, 360, 720))
+    # moisture_summer = np.zeros((nr_years_moisture, 360, 720))
+    
+    for idx, _ in enumerate(grid_cells[0]):
+        #grid cell
+        lat = grid_cells[0][idx]
+        lon = grid_cells[1][idx]
+        harvest_grid_cell = harvest_end_mean[lat, lon]
+    
+        #days for current grid cell
+        day_spring_start = int(harvest_grid_cell-SPRING_START)
+        day_spring_end = int(harvest_grid_cell-SPRING_END)
+        day_summer_start = int(harvest_grid_cell-SUMMER_START)
+        day_summer_end = int(harvest_grid_cell-SUMMER_END)
+        
+        #kdd spring
+        kdd_spring_gridcell = tmax[day_spring_start:day_spring_end, lat, lon, :] - T_HIGH_SPRING
+        kdd_spring_gridcell[kdd_spring_gridcell<=0] = 0
+        #kdd_spring_gridcell[np.isnan(kdd_spring_gridcell)] = 0
+        sum_kdd_spring[:, lat, lon] = np.sum(kdd_spring_gridcell, axis=0)
+    
+        #kdd summer
+        kdd_summer_gridcell = tmax[day_summer_start:day_summer_end, lat, lon, :] - T_HIGH_SUMMER
+        kdd_summer_gridcell[kdd_summer_gridcell<=0] = 0
+        #kdd_summer_gridcell[np.isnan(kdd_summer_gridcell)] = 0
+        sum_kdd_summer[:, lat, lon] = np.sum(kdd_summer_gridcell, axis=0)
+        
+        #gdd spring
+        gdd_spring_gridcell = (tmax[day_spring_start:day_spring_end, lat, lon, :] + 
+                        tmin[day_spring_start:day_spring_end, lat, lon, :])/2 - T_BASE_SPRING
+        gdd_spring_gridcell[gdd_spring_gridcell<=0] = 0
+        gdd_spring_gridcell[gdd_spring_gridcell>=GDD_MAX_SPRING] = GDD_MAX_SPRING
+        gdd_spring[:, lat, lon] = np.sum(gdd_spring_gridcell, axis=0)
+        
+        #gdd summer
+        gdd_summer_gridcell = (tmax[day_summer_start:day_summer_end, lat, lon, :] + 
+                        tmin[day_summer_start:day_summer_end, lat, lon, :])/2 - T_BASE_SUMMER
+        gdd_summer_gridcell[gdd_summer_gridcell<=0] = 0
+        gdd_summer_gridcell[gdd_summer_gridcell>=GDD_MAX_SUMMER] = GDD_MAX_SUMMER
+        gdd_summer[:, lat, lon] = np.sum(gdd_summer_gridcell, axis=0)
+        
+        # #soil moisture
+        # moisture_spring_gridcell = moisture[day_spring_start:day_spring_end, lat, lon, :]
+        # moisture_spring[:,lat, lon] = np.mean(moisture_spring_gridcell, axis=0)
+        # moisture_summer_gridcell = moisture[day_summer_start:day_summer_end, lat, lon, :]
+        # moisture_summer[:,lat, lon] = np.mean(moisture_summer_gridcell, axis=0)
+        
+        filename_output = 'kdd_gdd.nc'
+    return sum_kdd_spring, sum_kdd_summer, gdd_spring, gdd_summer, filename_output
+
+tmax, lat_tmax, lon_tmax, time_tmax = read_t_data(path_tmax, 'tmax')
+tmin, lat_tmin, lon_tmin, time_tmin = read_t_data(path_tmin, 'tmin')
+
+#check whether lat, lon and time is the same for tmax and tmin
+
+sum_kdd_spring, sum_kdd_summer, gdd_spring, gdd_summer, filename_output = kdd_gdd_per_gridcell(grid_cells, 
+                                                                                               tmax, tmin)
 
 """Save output"""
 output_path = Path('/Users/carmensteinmann/Documents/CLIMADA/own_projects/sequential_heat_crop_impacts/data/output')
-filename_output = 'kdd.nc'
 ds_output = xr.Dataset(data_vars=dict(kdd_spring=(["time", "lat", "lon"], sum_kdd_spring),
-                               kdd_summer=(["time", "lat", "lon"], sum_kdd_summer),),
+                               kdd_summer=(["time", "lat", "lon"], sum_kdd_summer),
+                               gdd_spring=(["time", "lat", "lon"], gdd_spring), 
+                               gdd_summer=(["time", "lat", "lon"], gdd_summer)),
                        coords=dict(
-                           time=(["time"], time),
+                           time=(["time"], time_tmax),
                            lat=(["lat"], lat_tmax),
                            lon=(["lon"], lon_tmax),
                            )
@@ -110,17 +158,76 @@ ds_output.to_netcdf(Path(output_path, filename_output))
 ds_output.close()
 
 
-#test 
-#491-360
-test_kdd = sum_kdd_summer[6,107,131]
-year = 6
-lat = 107
-lon = 131
-harvest_grid_cell = harvest_end_mean[lat, lon]
-day_summer_start = int(harvest_grid_cell-summer_start)
-day_summer_end = int(harvest_grid_cell-summer_end)
-kdd_summer_gridcell = tmax[day_summer_start:day_summer_end, lat, lon, :] - t_high_summer
-kdd_summer_gridcell[kdd_summer_gridcell<=0] = 0
-#kdd_summer_gridcell[np.isnan(kdd_summer_gridcell)] = 0
-size_kdd = kdd_summer_gridcell.shape
-total_kdd = np.sum(kdd_summer_gridcell, axis=0)
+"""TESTING"""
+# test_kdd = sum_kdd_summer[6,107,130]
+# year = 6
+# lat = 107
+# lon = 130
+# harvest_grid_cell = harvest_end_mean[lat, lon]
+# day_summer_start = int(harvest_grid_cell-summer_start)
+# day_summer_end = int(harvest_grid_cell-summer_end)
+# kdd_summer_gridcell = tmax[day_summer_start:day_summer_end, lat, lon, :] - t_high_summer
+# kdd_summer_gridcell[kdd_summer_gridcell<=0] = 0
+# #kdd_summer_gridcell[np.isnan(kdd_summer_gridcell)] = 0
+# size_kdd = kdd_summer_gridcell.shape
+# total_kdd = np.sum(kdd_summer_gridcell, axis=0)
+
+# #testing gdd
+# max_gdd = np.max(gdd_spring[~np.isnan(gdd_spring)])
+# grid_cells = np.where(gdd_spring == max_gdd)
+# year = 0
+# lat = 171
+# lon = 254
+# harvest_grid_cell = harvest_end_mean[lat, lon]
+# day_spring_start = int(harvest_grid_cell-SPRING_START)
+# day_spring_end = int(harvest_grid_cell-SPRING_END)
+# day_summer_start = int(harvest_grid_cell-SUMMER_START)
+# day_summer_end = int(harvest_grid_cell-SUMMER_END)
+# tmax_gridcell = tmax[day_spring_start:day_spring_end, lat, lon, :]
+# tmin_gridcell = tmin[day_spring_start:day_spring_end, lat, lon, :]
+# gdd_spring_gridcell = (tmax[day_spring_start:day_spring_end, lat, lon, :] + 
+#                 tmin[day_spring_start:day_spring_end, lat, lon, :])/2 - T_BASE_SPRING
+# gdd_spring_gridcell = (tmax_gridcell + tmin_gridcell)/2 - T_BASE_SPRING
+# gdd_spring_gridcell[gdd_spring_gridcell<=0] = 0
+# gdd_spring_gridcell[gdd_spring_gridcell>=GDD_MAX_SPRING] = GDD_MAX_SPRING
+# gdd_spring[:, lat, lon] = np.sum(gdd_spring_gridcell, axis=0)
+
+# gdd_summer_gridcell = (tmax[day_summer_start:day_summer_end, lat, lon, :] + 
+#                 tmin[day_summer_start:day_summer_end, lat, lon, :])/2 - T_BASE_SUMMER
+# gdd_summer_gridcell[gdd_summer_gridcell<=0] = 0
+# gdd_summer_gridcell[gdd_summer_gridcell>=GDD_MAX_SUMMER] = GDD_MAX_SUMMER
+# gdd_summer[:, lat, lon] = np.sum(gdd_summer_gridcell, axis=0)
+
+# np.max(gdd_spring[~np.isnan(gdd_spring)]) / GDD_MAX_SPRING
+# np.max(gdd_summer[~np.isnan(gdd_summer)]) / GDD_MAX_SUMMER
+
+"""PLOTTING"""
+# year_max, lat_max, lon_max = np.where(sum_kdd_summer == np.max(sum_kdd_summer[~np.isnan(sum_kdd_summer)]))
+# harvest_grid_cell = harvest_end_mean[int(lat_max), int(lon_max)]
+# day_summer_start = int(harvest_grid_cell-summer_start)
+# day_summer_end = int(harvest_grid_cell-summer_end)
+# kdd_max = tmax[day_summer_start:day_summer_end, lat_max, lon_max, int(year_max)]
+
+
+# x_axis = np.arange(day_summer_start, day_summer_end)
+# plt.hlines(t_high_summer, day_summer_start, day_summer_end, color='#fdae6b', label='$T_{high, summer}$')
+# plt.plot(np.arange(day_summer_start, day_summer_end), kdd_max, color='#e6550d', label='$T_{max, gridcell}$')
+# plt.fill_between(x_axis, kdd_max.flatten(), np.ones(30)*t_high_summer, color='#e6550d', alpha=0.1, label='$KDD_{summer}$')
+# plt.ylabel('Temperature [°C]')
+# plt.xlabel('Day of the year')
+# plt.legend(loc='upper right')
+# plt.xlim(day_summer_start, day_summer_end-1)
+# plt.savefig('kdd_vis.png', format='png', bbox_inches='tight')
+
+
+# import climada.util.plot as u_plot
+# def plot_tmax(t, lat, lon):
+#     lon1, lat1 = np.meshgrid(lon, lat)
+#     coords = np.append(lat1.reshape(360*720,1), lon1.reshape(360*720,1), axis=1)
+
+#     col_name = 't max'
+#     l_title = 'T max global'
+#     u_plot.geo_im_from_array(t[0,:,:].reshape(360*720,1), coords, col_name,
+#                                     l_title)
+
+# plot_tmax(sum_kdd_summer, lat_tmax, lon_tmax)
