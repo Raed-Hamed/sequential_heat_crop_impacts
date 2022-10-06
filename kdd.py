@@ -10,25 +10,32 @@ from pathlib import Path
 import xarray as xr
 import numpy as np
 import pandas as pd
+from matplotlib import pyplot as plt
 
 """Thresholds and data paths"""
 #temperatur thresholds for spring and summer kdd and gdd
-T_BASE_SPRING = 0
-T_OPTIMUM_SPRING = 22
-T_HIGH_SPRING = 24
+t_base_spring = 0
+t_optimum_spring = 22
+t_high_spring = 24
+gdd_max_spring = t_optimum_spring-t_base_spring
+thr_spring = [t_base_spring, t_optimum_spring, t_high_spring, gdd_max_spring]
 
-T_BASE_SUMMER = 10
-T_OPTIMUM_SUMMER = 21
-T_HIGH_SUMMER = 31
 
-GDD_MAX_SPRING = T_OPTIMUM_SPRING-T_BASE_SPRING
-GDD_MAX_SUMMER = T_OPTIMUM_SUMMER-T_BASE_SUMMER
+t_base_summer = 10
+t_optimum_summer = 21
+t_high_summer = 31
+gdd_max_summer = t_optimum_summer-t_base_summer
+thr_summer = [t_base_summer, t_optimum_summer, t_high_summer, gdd_max_summer]
+
 
 #number of days prior to the harvest day
-SPRING_START = 90
-SPRING_END = 60
-SUMMER_START = 50
-SUMMER_END = 20
+spring_start = 90
+spring_end = 60
+spring_dates = [spring_start, spring_end]
+
+summer_start = 50
+summer_end = 20
+summer_dates = [summer_start, summer_end]
 
 #specify temperature and soil data path and harvest date file
 path_tmax =  Path('/Users/carmensteinmann/Documents/CLIMADA/own_projects/sequential_heat_crop_impacts/data/output/tmax180')
@@ -64,8 +71,13 @@ def read_t_data(path, variable):
     return tmax, lat_tmax, lon_tmax, time
 
 
-def kdd_gdd_per_gridcell(grid_cells, tmax, tmin):
+def kdd_gdd_per_gridcell(grid_cells, tmax, tmin, thr_spring, thr_summer, spring_dates, summer_dates):
     """Compute kdd for summer and spring for all grid cells with a harvest date"""
+    t_base_spring, t_optimum_spring, t_high_spring, gdd_max_spring = thr_spring
+    t_base_summer, t_optimum_summer, t_high_summer, gdd_max_summer = thr_summer
+    spring_start, spring_end = spring_dates
+    summer_start, summer_end = summer_dates
+    
     nr_years = tmax.shape[3]
     nr_lon = tmax.shape[2]
     nr_lat = tmax.shape[1]
@@ -93,35 +105,35 @@ def kdd_gdd_per_gridcell(grid_cells, tmax, tmin):
         harvest_grid_cell = harvest_end_mean[lat, lon]
     
         #days for current grid cell
-        day_spring_start = int(harvest_grid_cell-SPRING_START)
-        day_spring_end = int(harvest_grid_cell-SPRING_END)
-        day_summer_start = int(harvest_grid_cell-SUMMER_START)
-        day_summer_end = int(harvest_grid_cell-SUMMER_END)
+        day_spring_start = int(harvest_grid_cell-spring_start)
+        day_spring_end = int(harvest_grid_cell-spring_end)
+        day_summer_start = int(harvest_grid_cell-summer_start)
+        day_summer_end = int(harvest_grid_cell-summer_end)
         
         #kdd spring
-        kdd_spring_gridcell = tmax[day_spring_start:day_spring_end, lat, lon, :] - T_HIGH_SPRING
+        kdd_spring_gridcell = tmax[day_spring_start:day_spring_end, lat, lon, :] - t_high_spring
         kdd_spring_gridcell[kdd_spring_gridcell<=0] = 0
         #kdd_spring_gridcell[np.isnan(kdd_spring_gridcell)] = 0
         sum_kdd_spring[:, lat, lon] = np.sum(kdd_spring_gridcell, axis=0)
     
         #kdd summer
-        kdd_summer_gridcell = tmax[day_summer_start:day_summer_end, lat, lon, :] - T_HIGH_SUMMER
+        kdd_summer_gridcell = tmax[day_summer_start:day_summer_end, lat, lon, :] - t_high_summer
         kdd_summer_gridcell[kdd_summer_gridcell<=0] = 0
         #kdd_summer_gridcell[np.isnan(kdd_summer_gridcell)] = 0
         sum_kdd_summer[:, lat, lon] = np.sum(kdd_summer_gridcell, axis=0)
         
         #gdd spring
         gdd_spring_gridcell = (tmax[day_spring_start:day_spring_end, lat, lon, :] + 
-                        tmin[day_spring_start:day_spring_end, lat, lon, :])/2 - T_BASE_SPRING
+                        tmin[day_spring_start:day_spring_end, lat, lon, :])/2 - t_base_spring
         gdd_spring_gridcell[gdd_spring_gridcell<=0] = 0
-        gdd_spring_gridcell[gdd_spring_gridcell>=GDD_MAX_SPRING] = GDD_MAX_SPRING
+        gdd_spring_gridcell[gdd_spring_gridcell>=gdd_max_spring] = gdd_max_spring
         gdd_spring[:, lat, lon] = np.sum(gdd_spring_gridcell, axis=0)
         
         #gdd summer
         gdd_summer_gridcell = (tmax[day_summer_start:day_summer_end, lat, lon, :] + 
-                        tmin[day_summer_start:day_summer_end, lat, lon, :])/2 - T_BASE_SUMMER
+                        tmin[day_summer_start:day_summer_end, lat, lon, :])/2 - t_base_summer
         gdd_summer_gridcell[gdd_summer_gridcell<=0] = 0
-        gdd_summer_gridcell[gdd_summer_gridcell>=GDD_MAX_SUMMER] = GDD_MAX_SUMMER
+        gdd_summer_gridcell[gdd_summer_gridcell>=gdd_max_summer] = gdd_max_summer
         gdd_summer[:, lat, lon] = np.sum(gdd_summer_gridcell, axis=0)
         
         # #soil moisture
@@ -173,35 +185,84 @@ ds_output.close()
 # total_kdd = np.sum(kdd_summer_gridcell, axis=0)
 
 # #testing gdd
-# max_gdd = np.max(gdd_spring[~np.isnan(gdd_spring)])
-# grid_cells = np.where(gdd_spring == max_gdd)
+# np.max(gdd_spring[~np.isnan(gdd_spring)]) / gdd_max_spring
+# np.max(gdd_summer[~np.isnan(gdd_summer)]) / gdd_max_summer
+# max_gdd = np.max(gdd_summer[~np.isnan(gdd_summer)])
+# median_gdd = np.median(gdd_summer[~np.isnan(gdd_summer)])
+# #grid_cells = np.where(gdd_summer == max_gdd)
+# grid_cells = np.where(gdd_summer >= median_gdd) and np.where(sum_kdd_summer>=20)
 # year = 0
-# lat = 171
-# lon = 254
+# lat = 82
+# lon = 140
+# # year = 0
+# # lat = 47
+# # lon = 66
 # harvest_grid_cell = harvest_end_mean[lat, lon]
-# day_spring_start = int(harvest_grid_cell-SPRING_START)
-# day_spring_end = int(harvest_grid_cell-SPRING_END)
-# day_summer_start = int(harvest_grid_cell-SUMMER_START)
-# day_summer_end = int(harvest_grid_cell-SUMMER_END)
+# day_spring_start = int(harvest_grid_cell-spring_start)
+# day_spring_end = int(harvest_grid_cell-spring_end)
+# day_summer_start = int(harvest_grid_cell-summer_start)
+# day_summer_end = int(harvest_grid_cell-summer_end)
 # tmax_gridcell = tmax[day_spring_start:day_spring_end, lat, lon, :]
 # tmin_gridcell = tmin[day_spring_start:day_spring_end, lat, lon, :]
 # gdd_spring_gridcell = (tmax[day_spring_start:day_spring_end, lat, lon, :] + 
-#                 tmin[day_spring_start:day_spring_end, lat, lon, :])/2 - T_BASE_SPRING
-# gdd_spring_gridcell = (tmax_gridcell + tmin_gridcell)/2 - T_BASE_SPRING
+#                 tmin[day_spring_start:day_spring_end, lat, lon, :])/2 - t_base_spring
+# gdd_spring_gridcell = (tmax_gridcell + tmin_gridcell)/2 - t_base_spring
 # gdd_spring_gridcell[gdd_spring_gridcell<=0] = 0
-# gdd_spring_gridcell[gdd_spring_gridcell>=GDD_MAX_SPRING] = GDD_MAX_SPRING
+# gdd_spring_gridcell[gdd_spring_gridcell>=gdd_max_spring] = gdd_max_spring
 # gdd_spring[:, lat, lon] = np.sum(gdd_spring_gridcell, axis=0)
 
 # gdd_summer_gridcell = (tmax[day_summer_start:day_summer_end, lat, lon, :] + 
-#                 tmin[day_summer_start:day_summer_end, lat, lon, :])/2 - T_BASE_SUMMER
+#                 tmin[day_summer_start:day_summer_end, lat, lon, :])/2 - t_base_summer
 # gdd_summer_gridcell[gdd_summer_gridcell<=0] = 0
-# gdd_summer_gridcell[gdd_summer_gridcell>=GDD_MAX_SUMMER] = GDD_MAX_SUMMER
+# gdd_summer_gridcell[gdd_summer_gridcell>=gdd_max_summer] = gdd_max_summer
 # gdd_summer[:, lat, lon] = np.sum(gdd_summer_gridcell, axis=0)
 
-# np.max(gdd_spring[~np.isnan(gdd_spring)]) / GDD_MAX_SPRING
-# np.max(gdd_summer[~np.isnan(gdd_summer)]) / GDD_MAX_SUMMER
+# kdd_max_year = tmax_gridcell[:, int(year)]
+# gdd_spring_year = gdd_spring_gridcell[:, int(year)]
 
-"""PLOTTING"""
+"""PLOTTING gdd and kdd"""
+year = 0
+lat = 82
+lon = 140
+harvest_grid_cell = harvest_end_mean[lat, lon]
+day_spring_start = int(harvest_grid_cell-spring_start)
+day_spring_end = int(harvest_grid_cell-spring_end)
+day_summer_start = int(harvest_grid_cell-summer_start)
+day_summer_end = int(harvest_grid_cell-summer_end)
+tmax_summer = tmax[day_summer_start:day_summer_end, lat, lon, year]
+tmean_summer = (tmax[day_summer_start:day_summer_end, lat, lon, year] + 
+                tmin[day_summer_start:day_summer_end, lat, lon, year])/2 
+x_axis = np.arange(day_summer_start, day_summer_end)
+y4 = np.minimum(np.ones(30)*t_optimum_summer, tmean_summer)
+fig = plt.figure()
+ax = fig.add_subplot(111)
+ax.hlines(t_high_summer, day_summer_start, day_summer_end, color='k', linestyles = 'dashed')
+ax.hlines(t_optimum_summer, day_summer_start, day_summer_end, color='k', linestyles = 'dashed')
+ax.hlines(t_base_summer, day_summer_start, day_summer_end, color='k', linestyles = 'dashed')
+ax.plot(np.arange(day_summer_start, day_summer_end), tmax_summer, color='#e6550d', label='$T_{max, gridcell}$')
+ax.plot(np.arange(day_summer_start, day_summer_end), tmean_summer, color='#fdae6b', label='$T_{mean, gridcell}$')
+ax.fill_between(x_axis, tmax_summer, t_high_summer, where=tmax_summer>=t_high_summer, color='k', alpha=0.3, label='$KDD_{summer}$', interpolate=True)
+ax.fill_between(x_axis, y4, t_base_summer, color='k', alpha=0.1, label='$GDD_{summer}$', interpolate=True)
+plt.ylabel('Temperature [°C]')
+plt.xlabel('Day of the year')
+plt.xlim(day_summer_start, day_summer_end-1)
+
+import matplotlib.transforms as transforms
+trans = transforms.blended_transform_factory(
+    ax.get_yticklabels()[0].get_transform(), ax.transData)
+ax.text(1, t_high_summer+0.8, '$T_{high}$' , color="k", transform=trans, 
+        ha="right", va="center")
+ax.text(1, t_optimum_summer+0.8, '$T_{optimum}$' , color="k", transform=trans, 
+        ha="right", va="center")
+ax.text(1, t_base_summer +0.8, '$T_{base}$' , color="k", transform=trans, 
+        ha="right", va="center")
+plt.legend(bbox_to_anchor=(1.04,1), loc="upper left")
+plt.savefig('kdd_gdd_vis.pdf', format='pdf', bbox_inches='tight')
+# plt.savefig('kdd_vis.png', format='png', bbox_inches='tight')
+
+
+
+"""PLOTTING ONLY KDD"""
 # year_max, lat_max, lon_max = np.where(sum_kdd_summer == np.max(sum_kdd_summer[~np.isnan(sum_kdd_summer)]))
 # harvest_grid_cell = harvest_end_mean[int(lat_max), int(lon_max)]
 # day_summer_start = int(harvest_grid_cell-summer_start)
