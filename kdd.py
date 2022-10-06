@@ -11,42 +11,10 @@ import xarray as xr
 import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
-
-"""Thresholds and data paths"""
-#temperatur thresholds for spring kdd and gdd
-t_base_spring = 0
-t_optimum_spring = 22
-t_high_spring = 24
-gdd_max_spring = t_optimum_spring-t_base_spring
-thr_spring = [t_base_spring, t_optimum_spring, t_high_spring, gdd_max_spring]
-
-#temperatur thresholds for summer kdd and gdd
-t_base_summer = 10
-t_optimum_summer = 21
-t_high_summer = 31
-gdd_max_summer = t_optimum_summer-t_base_summer
-thr_summer = [t_base_summer, t_optimum_summer, t_high_summer, gdd_max_summer]
-
-#number of days prior to the harvest day defining spring and summer
-spring_start = 90
-spring_end = 60
-spring_dates = [spring_start, spring_end]
-
-summer_start = 50
-summer_end = 20
-summer_dates = [summer_start, summer_end]
-
-#specify temperature and soil data path and harvest date file
-path_tmax =  Path('/Users/carmensteinmann/Documents/CLIMADA/own_projects/sequential_heat_crop_impacts/data/output/tmax180')
-path_tmin =  Path('/Users/carmensteinmann/Documents/CLIMADA/own_projects/sequential_heat_crop_impacts/data/output/tmin180') 
-path_crop_map = Path('/Users/carmensteinmann/Documents/CLIMADA/own_projects/sequential_heat_crop_impacts/data/crop_maps/sacks_wheat_winter.harvest.doy.I.nc')
-# path_moisture = Path('/Users/carmensteinmann/Documents/CLIMADA/own_projects/sequential_heat_crop_impacts/data/soil_moisture')
-
-path_output = Path('/Users/carmensteinmann/Documents/CLIMADA/own_projects/sequential_heat_crop_impacts/data/output')
+import matplotlib.transforms as transforms
 
 
-
-def read_t_data(path, variable):
+def read_t_data(path, variable, grid_cells):
     #read tmax files
     files = [f.name for f in path.iterdir() if f.is_file() and not f.name.startswith('.')]
     files.sort()
@@ -127,8 +95,7 @@ def kdd_gdd_per_gridcell(grid_cells, harvest_end_mean, tmax, tmin, thr_spring, t
         # moisture_summer_gridcell = moisture[day_summer_start:day_summer_end, lat, lon, :]
         # moisture_summer[:,lat, lon] = np.mean(moisture_summer_gridcell, axis=0)
         
-        filename_output = 'kdd_gdd.nc'
-    return kdd_spring, kdd_summer, gdd_spring, gdd_summer, filename_output
+    return kdd_spring, kdd_summer, gdd_spring, gdd_summer
 
 
 def compute_kdd(tmax_season, t_high_season):
@@ -148,7 +115,6 @@ def compute_gdd(tmean_season, t_base_season, gdd_max_season):
     return gdd_annual
 
 
-                                                    
 def save_outputs(path_output, filename_output, sum_kdd_spring, sum_kdd_summer, gdd_spring, gdd_summer, 
                  time_tmax, lat_tmax, lon_tmax):                                                    
     """Save output"""
@@ -166,26 +132,53 @@ def save_outputs(path_output, filename_output, sum_kdd_spring, sum_kdd_summer, g
     ds_output.to_netcdf(Path(path_output, filename_output))
     ds_output.close()
 
-"""Executing functions"""
-#Read harvest dates and temperature data
-ds_harvest = xr.open_dataset(path_crop_map)
-harvest_end_mean = ds_harvest['harvest.mean'].values
-grid_cells = np.where(~np.isnan(harvest_end_mean)) #grid cells with a harvest day
-tmax, lat_tmax, lon_tmax, time_tmax = read_t_data(path_tmax, 'tmax')
-tmin, lat_tmin, lon_tmin, time_tmin = read_t_data(path_tmin, 'tmin')
 
-#check whether lat, lon and time is the same for tmax and tmin
+def plot_gdd_kdd(year, lat, lon, tmax, tmin, harvest_end_mean, thr_spring, thr_summer, spring_dates, 
+                 summer_dates, season, filename):
+    """PLOTTING gdd and kdd"""
+    year = 0
+    lat = 82
+    lon = 140
+    
+    t_base_spring, t_optimum_spring, t_high_spring, gdd_max_spring = thr_spring
+    t_base_summer, t_optimum_summer, t_high_summer, gdd_max_summer = thr_summer
+    spring_start, spring_end = spring_dates
+    summer_start, summer_end = summer_dates
+    
+    harvest_grid_cell = harvest_end_mean[lat, lon]
+    # day_spring_start = int(harvest_grid_cell-spring_start)
+    # day_spring_end = int(harvest_grid_cell-spring_end)
+    day_summer_start = int(harvest_grid_cell-summer_start)
+    day_summer_end = int(harvest_grid_cell-summer_end)
+    tmax_summer = tmax[day_summer_start:day_summer_end, lat, lon, year]
+    tmean_summer = (tmax[day_summer_start:day_summer_end, lat, lon, year] + 
+                    tmin[day_summer_start:day_summer_end, lat, lon, year])/2 
+    x_axis = np.arange(day_summer_start, day_summer_end)
+    y4 = np.minimum(np.ones(30)*t_optimum_summer, tmean_summer)
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    ax.hlines(t_high_summer, day_summer_start, day_summer_end, color='k', linestyles = 'dashed')
+    ax.hlines(t_optimum_summer, day_summer_start, day_summer_end, color='k', linestyles = 'dashed')
+    ax.hlines(t_base_summer, day_summer_start, day_summer_end, color='k', linestyles = 'dashed')
+    ax.plot(np.arange(day_summer_start, day_summer_end), tmax_summer, color='#e6550d', label='$T_{max, gridcell}$')
+    ax.plot(np.arange(day_summer_start, day_summer_end), tmean_summer, color='#fdae6b', label='$T_{mean, gridcell}$')
+    ax.fill_between(x_axis, tmax_summer, t_high_summer, where=tmax_summer>=t_high_summer, color='k', alpha=0.3, label='$KDD_{summer}$', interpolate=True)
+    ax.fill_between(x_axis, y4, t_base_summer, color='k', alpha=0.1, label='$GDD_{summer}$', interpolate=True)
+    plt.ylabel('Temperature [°C]')
+    plt.xlabel('Day of the year')
+    plt.xlim(day_summer_start, day_summer_end-1)
+    
+    trans = transforms.blended_transform_factory(
+        ax.get_yticklabels()[0].get_transform(), ax.transData)
+    ax.text(1, t_high_summer+0.8, '$T_{high}$' , color="k", transform=trans, 
+            ha="right", va="center")
+    ax.text(1, t_optimum_summer+0.8, '$T_{optimum}$' , color="k", transform=trans, 
+            ha="right", va="center")
+    ax.text(1, t_base_summer +0.8, '$T_{base}$' , color="k", transform=trans, 
+            ha="right", va="center")
+    plt.legend(bbox_to_anchor=(1.04,1), loc="upper left")
+    plt.savefig('kdd_gdd_vis.pdf', format='pdf', bbox_inches='tight')
 
-[sum_kdd_spring, sum_kdd_summer, gdd_spring, 
- gdd_summer, filename_output] = kdd_gdd_per_gridcell(grid_cells, harvest_end_mean, tmax, tmin, thr_spring, thr_summer, 
-                                                     spring_dates, summer_dates)
-                                            
-[sum_kdd_spring2, sum_kdd_summer2, gdd_spring2, 
- gdd_summer2, filename_output2] = kdd_gdd_per_gridcell(grid_cells, harvest_end_mean, tmax, tmin, thr_spring, thr_summer, 
-                                                     spring_dates, summer_dates)
-                                                     
-# save_outputs(path_output, filename_output, sum_kdd_spring, sum_kdd_summer, gdd_spring, gdd_summer, 
-#                  time_tmax, lat_tmax, lon_tmax) 
 
 
 """TESTING"""
@@ -237,46 +230,6 @@ tmin, lat_tmin, lon_tmin, time_tmin = read_t_data(path_tmin, 'tmin')
 
 # kdd_max_year = tmax_gridcell[:, int(year)]
 # gdd_spring_year = gdd_spring_gridcell[:, int(year)]
-
-"""PLOTTING gdd and kdd"""
-year = 0
-lat = 82
-lon = 140
-harvest_grid_cell = harvest_end_mean[lat, lon]
-day_spring_start = int(harvest_grid_cell-spring_start)
-day_spring_end = int(harvest_grid_cell-spring_end)
-day_summer_start = int(harvest_grid_cell-summer_start)
-day_summer_end = int(harvest_grid_cell-summer_end)
-tmax_summer = tmax[day_summer_start:day_summer_end, lat, lon, year]
-tmean_summer = (tmax[day_summer_start:day_summer_end, lat, lon, year] + 
-                tmin[day_summer_start:day_summer_end, lat, lon, year])/2 
-x_axis = np.arange(day_summer_start, day_summer_end)
-y4 = np.minimum(np.ones(30)*t_optimum_summer, tmean_summer)
-fig = plt.figure()
-ax = fig.add_subplot(111)
-ax.hlines(t_high_summer, day_summer_start, day_summer_end, color='k', linestyles = 'dashed')
-ax.hlines(t_optimum_summer, day_summer_start, day_summer_end, color='k', linestyles = 'dashed')
-ax.hlines(t_base_summer, day_summer_start, day_summer_end, color='k', linestyles = 'dashed')
-ax.plot(np.arange(day_summer_start, day_summer_end), tmax_summer, color='#e6550d', label='$T_{max, gridcell}$')
-ax.plot(np.arange(day_summer_start, day_summer_end), tmean_summer, color='#fdae6b', label='$T_{mean, gridcell}$')
-ax.fill_between(x_axis, tmax_summer, t_high_summer, where=tmax_summer>=t_high_summer, color='k', alpha=0.3, label='$KDD_{summer}$', interpolate=True)
-ax.fill_between(x_axis, y4, t_base_summer, color='k', alpha=0.1, label='$GDD_{summer}$', interpolate=True)
-plt.ylabel('Temperature [°C]')
-plt.xlabel('Day of the year')
-plt.xlim(day_summer_start, day_summer_end-1)
-
-import matplotlib.transforms as transforms
-trans = transforms.blended_transform_factory(
-    ax.get_yticklabels()[0].get_transform(), ax.transData)
-ax.text(1, t_high_summer+0.8, '$T_{high}$' , color="k", transform=trans, 
-        ha="right", va="center")
-ax.text(1, t_optimum_summer+0.8, '$T_{optimum}$' , color="k", transform=trans, 
-        ha="right", va="center")
-ax.text(1, t_base_summer +0.8, '$T_{base}$' , color="k", transform=trans, 
-        ha="right", va="center")
-plt.legend(bbox_to_anchor=(1.04,1), loc="upper left")
-plt.savefig('kdd_gdd_vis.pdf', format='pdf', bbox_inches='tight')
-# plt.savefig('kdd_vis.png', format='png', bbox_inches='tight')
 
 
 
