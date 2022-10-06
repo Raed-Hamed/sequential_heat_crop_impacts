@@ -35,12 +35,12 @@ summer_end = 20
 summer_dates = [summer_start, summer_end]
 
 #specify temperature and soil data path and harvest date file
-path_tmax =  Path('/Users/carmensteinmann/Documents/CLIMADA/own_projects/sequential_heat_crop_impacts/data/output/tmax180')
-path_tmin =  Path('/Users/carmensteinmann/Documents/CLIMADA/own_projects/sequential_heat_crop_impacts/data/output/tmin180') 
-path_crop_map = Path('/Users/carmensteinmann/Documents/CLIMADA/own_projects/sequential_heat_crop_impacts/data/crop_maps/sacks_wheat_winter.harvest.doy.I.nc')
-# path_moisture = Path('/Users/carmensteinmann/Documents/CLIMADA/own_projects/sequential_heat_crop_impacts/data/soil_moisture')
+path_tmax =  Path('/Volumes/Files/WCR/2022/sequential_heat/data/output/tmax180')
+path_tmin =  Path('/Volumes/Files/WCR/2022/sequential_heat/data/output/tmin180') 
+path_crop_map = Path('/Volumes/Files/WCR/2022/sequential_heat/data/crop_maps/sacks_wheat_winter.harvest.doy.I.nc')
+# path_moisture = Path('/Volumes/Files/WCR/2022/sequential_heat/data/soil_moisture')
 
-path_output = Path('/Users/carmensteinmann/Documents/CLIMADA/own_projects/sequential_heat_crop_impacts/data/output')
+path_output = Path('/Volumes/Files/WCR/2022/sequential_heat/data/output')
 
 
 """Executing functions"""
