@@ -1,23 +1,26 @@
 #======================================================================
+#load libraries
+#======================================================================
 library(tidyverse)
 library(sf)
 library(USAboundaries)
 library(colorspace)
 #======================================================================
 #clean workspace
+#======================================================================
 rm(list = ls())
 graphics.off()
 gc()
 #======================================================================
-conversation_metric <-14.87
+#fixed parameters
+#======================================================================
+#yield convert rate (from bu/acre to t/ha)
+yield_conv_rate <- 14.87 
+
 #load functions
 us_spatial_sf<-  function(x) {
   #x is either us_counties or us_states from usaboundaries package  
   x %>% 
-    # filter(!state_name  %in% 
-    #          c("Alaska","Puerto Rico","Hawaii","Washington",
-    #            "Oregon","California","Nevada","Idaho","Utah",
-    #            "Arizona","New Mexico","Colorado","Wyoming","Montana"))%>% 
     rename(County = name,
            State  = state_name) %>% 
     dplyr::select(County,State,geometry) %>% 
@@ -26,18 +29,44 @@ us_spatial_sf<-  function(x) {
 }
 #======================================================================
 root_dir <-"C:/Users/rhd630/Desktop/PhD/Academic/paper_4"
-root_data <-file.path(root_dir,"data/usda-nass")
+dir_data <-file.path(root_dir,"data/usda-nass")
 #======================================================================
-usda_wheat_df <-list.files(root_data, "wheat", full.names = TRUE) %>%
+usda_wheat_df <-list.files(dir_data, "wheat", full.names = TRUE) %>%
   map_dfr(read.csv) %>% 
   dplyr::select(Year,State,County,Data.Item,Value) %>% 
-  filter(Data.Item == "WHEAT, WINTER - YIELD, MEASURED IN BU / ACRE") 
+  filter(Data.Item == "WHEAT, WINTER - YIELD, MEASURED IN BU / ACRE") %>% 
+  mutate(Value = Value / yield_conv_rate) %>% 
+  dplyr::select(-Data.Item) 
 #======================================================================
 usda_wheat_sf <- us_counties() %>%  us_spatial_sf %>%
   left_join(usda_wheat_df, by = c("County","State"))%>% 
   drop_na() %>% 
-  arrange(Year) 
+  arrange(Year) %>% 
+  tibble() %>% 
+  group_by(State,County) %>%           
+  mutate(n = n()) %>%
+  filter(n < 44) %>% 
+  ungroup() %>% 
+  st_as_sf()
 #======================================================================
+#quick boxplot to see how many years we have per county
+usda_wheat_sf %>%
+  ggplot() +
+  geom_histogram(aes(x = n), bins = 43) +
+  theme_bw(base_size = 20)
+
+#shapefile plot of years with full length timeseries
+usda_wheat_sf %>% 
+  dplyr::select(n,geometry) %>% 
+  tibble() %>% 
+  distinct() %>% 
+  st_as_sf() %>% 
+  ggplot()+
+  geom_sf(aes(fill = n))+
+  theme_bw(base_size = 20) +
+  scale_fill_continuous_sequential("Viridis")
+
+#create usda shapefile
 usda_shp <-usda_wheat_sf %>% 
   dplyr::select(geometry) %>% 
   tibble() %>% 
