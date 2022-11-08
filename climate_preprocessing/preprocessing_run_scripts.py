@@ -8,7 +8,7 @@ Created on Thu Oct  6 16:06:41 2022
 from pathlib import Path
 import xarray as xr
 import numpy as np
-from kdd import read_t_data, read_moisture, kdd_gdd_per_gridcell, kdd_gdd_per_months, save_outputs
+from preprocessing_functions import read_t_data, read_moisture, kdd_gdd_per_gridcell, kdd_gdd_per_months, save_outputs
 
 """Thresholds and data paths"""
 #temperatur thresholds for spring kdd and gdd
@@ -85,7 +85,7 @@ save_outputs(path_output, filename_output, kdd_spring_m, kdd_summer_m, gdd_sprin
 
 
 """Plotting"""
-# from kdd import plot_gdd_kdd, plot_map
+# from preprocessing_functions import plot_gdd_kdd, plot_map
 
 # plot_map(moisture_spring_m[0,:,:], lat_tmax, lon_tmax)
 
