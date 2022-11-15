@@ -8,7 +8,7 @@ Created on Thu Oct  6 16:06:41 2022
 from pathlib import Path
 import xarray as xr
 import numpy as np
-from preprocessing_functions import read_t_data, read_moisture, kdd_gdd_per_gridcell, kdd_gdd_per_months, save_outputs
+from preprocessing_functions import read_t_data, read_moisture, from_harvest_date, kdd_gdd_per_months, save_outputs
 
 """Thresholds and data paths"""
 #temperatur thresholds for spring kdd and gdd
@@ -65,23 +65,24 @@ moisture, lat_moisture, lon_moisture, time_moisture = read_moisture(path_moistur
 #kdd, gdd and mean sm for grid cell specific harvest days
 [kdd_spring, kdd_summer, 
   gdd_spring, gdd_summer, 
-  moisture_spring, moisture_summer] = kdd_gdd_per_gridcell(grid_cells, harvest_end_mean, 
+  mean_tmax_spring, mean_tmax_summer,
+  moisture_spring, moisture_summer] = from_harvest_date(grid_cells, harvest_end_mean, 
                                                           tmax, tmin, moisture, 
                                                           thr_spring, thr_summer,
                                                           spring_dates, summer_dates)
-filename_output = 'kdd_gdd_sm.nc'                                                     
-save_outputs(path_output, filename_output, kdd_spring, kdd_summer, gdd_spring, gdd_summer, 
+filename_output = 'wheat_kdd_gdd_tmax_sm.nc'                                                     
+save_outputs(path_output, filename_output, kdd_spring, kdd_summer, gdd_spring, gdd_summer, mean_tmax_spring, mean_tmax_summer,
               moisture_spring, moisture_summer, time_tmax, lat_tmax, lon_tmax) 
 
-#kdd, gdd and mean sm for fixed_months
-[kdd_spring_m, kdd_summer_m, 
-  gdd_spring_m, gdd_summer_m, 
-  moisture_spring_m, moisture_summer_m] = kdd_gdd_per_months(grid_cells, tmax, tmin, moisture, 
-                                                              thr_spring, thr_summer,
-                                                              spring_dates_m, summer_dates_m)                                                          
-filename_output = 'kdd_gdd_sm_May_July.nc'                                                     
-save_outputs(path_output, filename_output, kdd_spring_m, kdd_summer_m, gdd_spring_m, gdd_summer_m, 
-              moisture_spring_m, moisture_summer_m, time_tmax, lat_tmax, lon_tmax) 
+# #kdd, gdd and mean sm for fixed_months
+# [kdd_spring_m, kdd_summer_m, 
+#   gdd_spring_m, gdd_summer_m, 
+#   moisture_spring_m, moisture_summer_m] = kdd_gdd_per_months(grid_cells, tmax, tmin, moisture, 
+#                                                               thr_spring, thr_summer,
+#                                                               spring_dates_m, summer_dates_m)                                                          
+# filename_output = 'kdd_gdd_sm_May_July.nc'                                                     
+# save_outputs(path_output, filename_output, kdd_spring_m, kdd_summer_m, gdd_spring_m, gdd_summer_m, 
+#               moisture_spring_m, moisture_summer_m, time_tmax, lat_tmax, lon_tmax) 
 
 
 """Plotting"""
