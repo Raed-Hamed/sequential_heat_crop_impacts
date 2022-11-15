@@ -72,7 +72,8 @@ def read_moisture(path_moisture, grid_cells):
     
     return moisture, lat_moisture, lon_moisture, time_moisture
 
-def kdd_gdd_per_gridcell(grid_cells, harvest_end_mean, tmax, tmin, moisture, thr_spring, thr_summer, spring_dates, summer_dates):
+def from_harvest_date(grid_cells, harvest_end_mean, tmax, tmin, moisture, 
+                      thr_spring, thr_summer, spring_dates, summer_dates):
     """Compute kdd for summer and spring for all grid cells with a harvest date"""
     t_base_spring, t_optimum_spring, t_high_spring, gdd_max_spring = thr_spring
     t_base_summer, t_optimum_summer, t_high_summer, gdd_max_summer = thr_summer
@@ -94,7 +95,12 @@ def kdd_gdd_per_gridcell(grid_cells, harvest_end_mean, tmax, tmin, moisture, thr
     gdd_spring[:,:,:] = np.nan
     gdd_summer = np.empty(shape_kdd)
     gdd_summer[:,:,:] = np.nan
-
+        
+    mean_tmax_spring = np.empty(shape_kdd)
+    mean_tmax_spring[:,:,:] = np.nan
+    mean_tmax_summer = np.empty(shape_kdd)
+    mean_tmax_summer[:,:,:] = np.nan
+    
     moisture_spring = np.empty(shape_kdd)
     moisture_spring[:,:,:] = np.nan
     moisture_summer = np.empty(shape_kdd)
@@ -126,13 +132,155 @@ def kdd_gdd_per_gridcell(grid_cells, harvest_end_mean, tmax, tmin, moisture, thr
         gdd_spring[:, lat, lon] = compute_gdd(tmean_spring, t_base_spring, gdd_max_spring)
         gdd_summer[:, lat, lon] = compute_gdd(tmean_summer, t_base_summer, gdd_max_summer)
         
+        #mean tmax
+        mean_tmax_spring[:, lat, lon]  = np.mean(tmax_spring, axis=0)
+        mean_tmax_summer[:, lat, lon]  = np.mean(tmax_summer, axis=0)
+        
         #soil moisture
         moisture_spring_gridcell = moisture[day_spring_start:day_spring_end, lat, lon, :]
         moisture_spring[:,lat, lon] = np.mean(moisture_spring_gridcell, axis=0)
         moisture_summer_gridcell = moisture[day_summer_start:day_summer_end, lat, lon, :]
         moisture_summer[:,lat, lon] = np.mean(moisture_summer_gridcell, axis=0)
         
-    return kdd_spring, kdd_summer, gdd_spring, gdd_summer, moisture_spring, moisture_summer
+    return kdd_spring, kdd_summer, gdd_spring, gdd_summer, mean_tmax_spring, mean_tmax_summer, moisture_spring, moisture_summer
+
+def from_planting_date(grid_cells, planting, tmax, tmin, moisture, thr_spring, thr_summer, 
+                          spring_dates, summer_dates):
+    """Compute kdd for summer and spring for all grid cells with a harvest date"""
+    t_base_spring, t_optimum_spring, t_high_spring, gdd_max_spring = thr_spring
+    t_base_summer, t_optimum_summer, t_high_summer, gdd_max_summer = thr_summer
+    spring_start, spring_end = spring_dates
+    summer_start, summer_end = summer_dates
+    
+    nr_years = tmax.shape[3]
+    nr_lon = tmax.shape[2]
+    nr_lat = tmax.shape[1]
+    
+    shape_kdd = (nr_years, nr_lat, nr_lon)
+    
+    kdd_spring = np.empty(shape_kdd)
+    kdd_spring[:,:,:] = np.nan
+    kdd_summer = np.empty(shape_kdd)
+    kdd_summer[:,:,:] = np.nan
+    
+    gdd_spring = np.empty(shape_kdd)
+    gdd_spring[:,:,:] = np.nan
+    gdd_summer = np.empty(shape_kdd)
+    gdd_summer[:,:,:] = np.nan
+    
+    mean_tmax_spring = np.empty(shape_kdd)
+    mean_tmax_spring[:,:,:] = np.nan
+    mean_tmax_summer = np.empty(shape_kdd)
+    mean_tmax_summer[:,:,:] = np.nan
+    
+    moisture_spring = np.empty(shape_kdd)
+    moisture_spring[:,:,:] = np.nan
+    moisture_summer = np.empty(shape_kdd)
+    moisture_summer[:,:,:] = np.nan
+    
+    for idx, _ in enumerate(grid_cells[0]):
+        #grid cell
+        lat = grid_cells[0][idx]
+        lon = grid_cells[1][idx]
+        planting_grid_cell = planting[lat, lon]
+    
+        #spring days and temperatures for current grid cell
+        day_spring_start = int(planting_grid_cell+spring_start)
+        day_spring_end = int(planting_grid_cell+spring_end)
+        tmax_spring = tmax[day_spring_start:day_spring_end, lat, lon, :]
+        tmin_spring = tmin[day_spring_start:day_spring_end, lat, lon, :]
+        tmean_spring = (tmax_spring + tmin_spring)/2 
+        
+        #summer days and temperatures for current grid cell
+        day_summer_start = int(planting_grid_cell+summer_start)
+        day_summer_end = int(planting_grid_cell+summer_end)
+        tmax_summer = tmax[day_summer_start:day_summer_end, lat, lon, :]
+        tmin_summer = tmin[day_summer_start:day_summer_end, lat, lon, :]
+        tmean_summer = (tmax_summer + tmin_summer)/2 
+        
+        #spring and summer kdd and gdd
+        kdd_spring[:, lat, lon] = compute_kdd(tmax_spring, t_high_spring)
+        kdd_summer[:, lat, lon] = compute_kdd(tmax_summer, t_high_summer)
+        gdd_spring[:, lat, lon] = compute_gdd(tmean_spring, t_base_spring, gdd_max_spring)
+        gdd_summer[:, lat, lon] = compute_gdd(tmean_summer, t_base_summer, gdd_max_summer)
+        
+        #mean tmax
+        mean_tmax_spring[:, lat, lon]  = np.mean(tmax_spring, axis=0)
+        mean_tmax_summer[:, lat, lon]  = np.mean(tmax_summer, axis=0)
+        
+        #soil moisture
+        moisture_spring_gridcell = moisture[day_spring_start:day_spring_end, lat, lon, :]
+        moisture_spring[:,lat, lon] = np.mean(moisture_spring_gridcell, axis=0)
+        moisture_summer_gridcell = moisture[day_summer_start:day_summer_end, lat, lon, :]
+        moisture_summer[:,lat, lon] = np.mean(moisture_summer_gridcell, axis=0)
+        
+    return kdd_spring, kdd_summer, gdd_spring, gdd_summer, mean_tmax_spring, mean_tmax_summer, moisture_spring, moisture_summer
+
+
+# def kdd_gdd_per_gridcell_maize(grid_cells, planting, harvest, tmax, tmin, moisture, thr_spring, thr_summer, 
+#                                duration_spring, duration_summer):
+#     """Compute kdd for summer and spring for all grid cells with a harvest date"""
+#     t_base_spring, t_optimum_spring, t_high_spring, gdd_max_spring = thr_spring
+#     t_base_summer, t_optimum_summer, t_high_summer, gdd_max_summer = thr_summer
+#     # spring_start, spring_end = spring_dates
+#     # summer_start, summer_end = summer_dates
+    
+#     nr_years = tmax.shape[3]
+#     nr_lon = tmax.shape[2]
+#     nr_lat = tmax.shape[1]
+    
+#     shape_kdd = (nr_years, nr_lat, nr_lon)
+    
+#     kdd_spring = np.empty(shape_kdd)
+#     kdd_spring[:,:,:] = np.nan
+#     kdd_summer = np.empty(shape_kdd)
+#     kdd_summer[:,:,:] = np.nan
+    
+#     gdd_spring = np.empty(shape_kdd)
+#     gdd_spring[:,:,:] = np.nan
+#     gdd_summer = np.empty(shape_kdd)
+#     gdd_summer[:,:,:] = np.nan
+
+#     moisture_spring = np.empty(shape_kdd)
+#     moisture_spring[:,:,:] = np.nan
+#     moisture_summer = np.empty(shape_kdd)
+#     moisture_summer[:,:,:] = np.nan
+    
+#     for idx, _ in enumerate(grid_cells[0]):
+#         #grid cell
+#         lat = grid_cells[0][idx]
+#         lon = grid_cells[1][idx]
+#         planting_grid_cell = planting[lat, lon]
+#         harvest_grid_cell = harvest[lat, lon]
+    
+#         #spring days and temperatures for current grid cell
+#         day_spring_start = int(harvest_grid_cell-spring_start)
+#         day_spring_end = int(harvest_grid_cell-spring_end)
+#         tmax_spring = tmax[day_spring_start:day_spring_end, lat, lon, :]
+#         tmin_spring = tmin[day_spring_start:day_spring_end, lat, lon, :]
+#         tmean_spring = (tmax_spring + tmin_spring)/2 
+        
+#         #summer days and temperatures for current grid cell
+#         day_summer_start = int(harvest_grid_cell-summer_start)
+#         day_summer_end = int(harvest_grid_cell-summer_end)
+#         tmax_summer = tmax[day_summer_start:day_summer_end, lat, lon, :]
+#         tmin_summer = tmin[day_summer_start:day_summer_end, lat, lon, :]
+#         tmean_summer = (tmax_summer + tmin_summer)/2 
+        
+#         #spring and summer kdd and gdd
+#         kdd_spring[:, lat, lon] = compute_kdd(tmax_spring, t_high_spring)
+#         kdd_summer[:, lat, lon] = compute_kdd(tmax_summer, t_high_summer)
+#         gdd_spring[:, lat, lon] = compute_gdd(tmean_spring, t_base_spring, gdd_max_spring)
+#         gdd_summer[:, lat, lon] = compute_gdd(tmean_summer, t_base_summer, gdd_max_summer)
+        
+#         #soil moisture
+#         moisture_spring_gridcell = moisture[day_spring_start:day_spring_end, lat, lon, :]
+#         moisture_spring[:,lat, lon] = np.mean(moisture_spring_gridcell, axis=0)
+#         moisture_summer_gridcell = moisture[day_summer_start:day_summer_end, lat, lon, :]
+#         moisture_summer[:,lat, lon] = np.mean(moisture_summer_gridcell, axis=0)
+        
+#     return kdd_spring, kdd_summer, gdd_spring, gdd_summer, moisture_spring, moisture_summer
+
 
 def kdd_gdd_per_months(grid_cells, tmax, tmin, moisture, thr_spring, thr_summer, spring_dates, summer_dates):
     """Compute kdd for summer and spring for all grid cells and a fixed time span"""
@@ -204,12 +352,14 @@ def compute_gdd(tmean_season, t_base_season, gdd_max_season):
     
 
 def save_outputs(path_output, filename_output, sum_kdd_spring, sum_kdd_summer, gdd_spring, gdd_summer, 
-                 moisture_spring, moisture_summer, time_tmax, lat_tmax, lon_tmax):                                                    
+                 tmax_spring, tmax_summer, moisture_spring, moisture_summer, time_tmax, lat_tmax, lon_tmax):                                                    
     """Save output"""
     ds_output = xr.Dataset(data_vars=dict(kdd_spring=(["time", "lat", "lon"], sum_kdd_spring),
                                    kdd_summer=(["time", "lat", "lon"], sum_kdd_summer),
                                    gdd_spring=(["time", "lat", "lon"], gdd_spring), 
                                    gdd_summer=(["time", "lat", "lon"], gdd_summer),
+                                   mean_tmax_spring=(["time", "lat", "lon"], tmax_spring), 
+                                   mean_tmax_summer=(["time", "lat", "lon"], tmax_summer),
                                    mean_sm_spring=(["time", "lat", "lon"], moisture_spring), 
                                    mean_sm_summer=(["time", "lat", "lon"], moisture_summer)),
                            coords=dict(
