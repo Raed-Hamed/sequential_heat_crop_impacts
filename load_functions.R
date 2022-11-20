@@ -8,7 +8,7 @@ us_spatial_sf<-  function(x) {
     mutate_at(vars(State,County), ~toupper(.))
   
 }
-
+#======================================================================
 #load temperature data
 load_cpc_t <-function(filename, varname, shapefile){
   
@@ -19,13 +19,66 @@ load_cpc_t <-function(filename, varname, shapefile){
     rasterToPoints() %>%
     data.frame() %>%
     tibble() %>%
-    pivot_longer(X1979:X2021) %>%
+    pivot_longer(X1980:X2021) %>%
     group_by(x, y) %>%
-    mutate(Year = 1979:2021) %>%
+    mutate(Year = 1980:2021) %>%
     dplyr::select(-name) %>%
     ungroup()
   
 }
+#======================================================================
+#print lm model pvalue
+lmp <- function (modelobject) {
+  if (class(modelobject) != "lm") stop("Not an object of class 'lm' ")
+  f <- summary(modelobject)$fstatistic
+  p <- pf(f[1],f[2],f[3],lower.tail=F)
+  attributes(p) <- NULL
+  return(p)
+}
+#======================================================================
+#leave-one-out function
+fun_loo_per_grid <- function(x,model){
+  predictions <-rep(NA, length(x$crop_yield))
+  List_year <-unique(x$Year)
+  
+  for (i in 1:length(List_year)){
+    
+    Training_i <- x[x$Year!=List_year[i],]
+    Test_i <- x[x$Year==List_year[i],]
+    Mod_i <- lm(formula(model),data =Training_i)
+    Y_lm_i <- predict(Mod_i, newdata = Test_i,type="response")
+    predictions[x$Year==List_year[i]] <-Y_lm_i
+    
+  }
+  return(predictions) 
+}
+#======================================================================
+#r-squared function
+rsq <- function (x, y) cor(x, y) ^ 2
+#======================================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 library(RColorBrewer)
 breaks_plot <-seq(-0.5,0.5,0.1)
