@@ -1,3 +1,6 @@
+##TO REMOVE
+##
+
 #======================================================================
 #load libraries
 #======================================================================
@@ -58,8 +61,10 @@ kdd_full_sf <- kdd_data_full %>%
            crs = "+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0")
 #======================================================================
 #take crop data and filter for years at least 33
+usda_wheat_sf$Year %>%  unique() %>%  length() * .70
+
 clean_crop_data <- usda_wheat_sf %>%
-  filter(n > 33) %>%
+  filter(n > 30) %>%
   dplyr::select(-n) %>%
   rename(crop_yield = Value)
 #======================================================================
@@ -90,8 +95,8 @@ full_data_id <- full_Sf_yield_climate %>%
             ~ scale(., center = TRUE, scale = TRUE)) %>% 
   ungroup()
 
-
-detrended_full_data_id <-full_data_id
+#======================================================================
+#detrended_full_data_id <-full_data_id
 
 saveRDS(full_data_id, "model_data.rds")
 #======================================================================
@@ -100,7 +105,7 @@ saveRDS(full_data_id, "model_data.rds")
 library(lme4)
 est <-
   lmer(
-    crop_yield ~ kdd_summer * kdd_spring + (1 |group_id) + (1 | Year),
+    crop_yield ~ kdd_summer * kdd_spring + (1 |group_id) + (1 |Year),
     data = full_data_id
   )
 
@@ -221,6 +226,13 @@ ggplot() +
     override.aes = list(size = 1.5)
   ))
 #======================================================================
+model_coefficients %>% 
+  tibble() %>% 
+  filter(p.value <= 0.1) %>% 
+  ggplot()+
+  geom_density(aes(estimate), fill = "red", alpha = 0.4)+
+  facet_wrap(~term)+
+  theme_bw()
 #north dakota / Montana
 #======================================================================
 plot_dependence_per_state <-function(state_name,pval_thrsh){
@@ -392,7 +404,7 @@ plot_dependence_per_state <-function(state_name,pval_thrsh){
   return(conmbined_plot)
 }
 #======================================================================
-plot_dependence_per_state("SOUTH DAKOTA", 0.1)
+plot_dependence_per_state("KANSAS", 0.1)
 #======================================================================
 #incl. gdd
 #detrend at county scale
