@@ -56,30 +56,102 @@ fun_loo_per_grid <- function(x,model){
 #r-squared function
 rsq <- function (x, y) cor(x, y) ^ 2
 #======================================================================
+#plot coefficients
+plot_model_coefs <- function(area, pval_trsh) {
+  p1 <- model_coefficients %>%
+    dplyr::select(estimate, term, zone) %>%
+    filter(zone == area) %>%
+    ggplot() +
+    {
+      if (area == "US")
+        geom_sf(data = us_States_Sf,
+                fill = "lightgray",
+                color = "transparent")
+    } +
+    {
+      if (area == "EU")
+        geom_sf(data = shp_eu,
+                fill = "lightgray",
+                color = "transparent")
+    } +
+    geom_sf(aes(fill  = estimate), color = "transparent") +
+    geom_sf(
+      data = model_coefficients %>% filter(p.value <= pval_trsh) %>%
+        filter(zone == area),
+      fill = "transparent"
+    ) +
+    
+    facet_wrap( ~ term) +
+   # scale_fill_continuous_diverging("Blue-Red 3", limit = c(-1, 1)) +
+    scale_fill_continuous_diverging("Blue-Red 3", limit = c(-2000, 2000)) +
+    
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    {
+      if (area == "EU")
+        geom_sf(data = shp_eu,
+                fill = "transparent",
+                color = "black")
+    } +
+    {
+      if (area == "EU")
+        coord_sf(c(-20, 40), c(30, 60))
+    } +
+    {
+      if (area == "US")
+        geom_sf(data = us_States_Sf,
+                fill = "transparent",
+                color = "black")
+    } +
+    theme_bw(base_size = 15)
+  
+  return(p1)
+}
+#======================================================================
+#plot R-square
+plot_model_rsq <- function(area,minimum_rsq_val){
+  
+  p1 <-model_rsquare %>%
+    dplyr::select(rsq_full_model,zone) %>%
+    filter(zone == area) %>%
+    filter(rsq_full_model >= minimum_rsq_val) %>% 
+    ggplot() +
+    {
+      if (area == "US")
+        geom_sf(data = us_States_Sf,
+                fill = "lightgray",
+                color = "transparent")
+    } +
+    {
+      if (area == "EU")
+        geom_sf(data = shp_eu,
+                fill = "lightgray",
+                color = "transparent")
+    } +
+    geom_sf(aes(fill = rsq_full_model), color = "transparent") +
+    geom_sf(data = model_sig %>% filter(model_pvalue <= 0.05) %>%
+              filter(zone == area), fill = "transparent") +
+    scale_fill_continuous_sequential("PuRd", limit = c(0, 1)) +
+    {
+      if (area == "EU")
+        geom_sf(data = shp_eu,
+                fill = "transparent",
+                color = "black")
+    } +
+    {
+      if (area == "EU")
+        coord_sf(c(-20, 40), c(30, 60))
+    } +
+    {
+      if (area == "US")
+        geom_sf(data = us_States_Sf,
+                fill = "transparent",
+                color = "black")
+    } +
+    theme_bw(base_size = 15)
+  
+  return(p1)
+}
+#======================================================================
 library(RColorBrewer)
 breaks_plot <-seq(-0.5,0.5,0.1)
 n <- breaks_plot %>%  length()
