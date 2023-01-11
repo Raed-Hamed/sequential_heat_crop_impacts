@@ -8,7 +8,7 @@ us_spatial_sf<-  function(x) {
     mutate_at(vars(State,County), ~toupper(.))
   
 }
-
+#======================================================================
 #load temperature data
 load_cpc_t <-function(filename, varname, shapefile){
   
@@ -19,14 +19,139 @@ load_cpc_t <-function(filename, varname, shapefile){
     rasterToPoints() %>%
     data.frame() %>%
     tibble() %>%
-    pivot_longer(X1979:X2021) %>%
+    pivot_longer(X1980:X2021) %>%
     group_by(x, y) %>%
-    mutate(Year = 1979:2021) %>%
+    mutate(Year = 1980:2021) %>%
     dplyr::select(-name) %>%
     ungroup()
   
 }
+#======================================================================
+#print lm model pvalue
+lmp <- function (modelobject) {
+  if (class(modelobject) != "lm") stop("Not an object of class 'lm' ")
+  f <- summary(modelobject)$fstatistic
+  p <- pf(f[1],f[2],f[3],lower.tail=F)
+  attributes(p) <- NULL
+  return(p)
+}
+#======================================================================
+#leave-one-out function
+fun_loo_per_grid <- function(x,model){
+  predictions <-rep(NA, length(x$crop_yield))
+  List_year <-unique(x$Year)
+  
+  for (i in 1:length(List_year)){
+    
+    Training_i <- x[x$Year!=List_year[i],]
+    Test_i <- x[x$Year==List_year[i],]
+    Mod_i <- lm(formula(model),data =Training_i)
+    Y_lm_i <- predict(Mod_i, newdata = Test_i,type="response")
+    predictions[x$Year==List_year[i]] <-Y_lm_i
+    
+  }
+  return(predictions) 
+}
+#======================================================================
+#r-squared function
+rsq <- function (x, y) cor(x, y) ^ 2
+#======================================================================
+#plot coefficients
+plot_model_coefs <- function(area, pval_trsh) {
+  p1 <- model_coefficients %>%
+    dplyr::select(estimate, term, zone) %>%
+    filter(zone == area) %>%
+    ggplot() +
+    {
+      if (area == "US")
+        geom_sf(data = us_States_Sf,
+                fill = "lightgray",
+                color = "transparent")
+    } +
+    {
+      if (area == "EU")
+        geom_sf(data = shp_eu,
+                fill = "lightgray",
+                color = "transparent")
+    } +
+    geom_sf(aes(fill  = estimate), color = "transparent") +
+    geom_sf(
+      data = model_coefficients %>% filter(p.value <= pval_trsh) %>%
+        filter(zone == area),
+      fill = "transparent"
+    ) +
+    
+    facet_wrap( ~ term) +
+   # scale_fill_continuous_diverging("Blue-Red 3", limit = c(-1, 1)) +
+    scale_fill_continuous_diverging("Blue-Red 3", limit = c(-2000, 2000)) +
+    
 
+    {
+      if (area == "EU")
+        geom_sf(data = shp_eu,
+                fill = "transparent",
+                color = "black")
+    } +
+    {
+      if (area == "EU")
+        coord_sf(c(-20, 40), c(30, 60))
+    } +
+    {
+      if (area == "US")
+        geom_sf(data = us_States_Sf,
+                fill = "transparent",
+                color = "black")
+    } +
+    theme_bw(base_size = 15)
+  
+  return(p1)
+}
+#======================================================================
+#plot R-square
+plot_model_rsq <- function(area,minimum_rsq_val){
+  
+  p1 <-model_rsquare %>%
+    dplyr::select(rsq_full_model,zone) %>%
+    filter(zone == area) %>%
+    filter(rsq_full_model >= minimum_rsq_val) %>% 
+    ggplot() +
+    {
+      if (area == "US")
+        geom_sf(data = us_States_Sf,
+                fill = "lightgray",
+                color = "transparent")
+    } +
+    {
+      if (area == "EU")
+        geom_sf(data = shp_eu,
+                fill = "lightgray",
+                color = "transparent")
+    } +
+    geom_sf(aes(fill = rsq_full_model), color = "transparent") +
+    geom_sf(data = model_sig %>% filter(model_pvalue <= 0.05) %>%
+              filter(zone == area), fill = "transparent") +
+    scale_fill_continuous_sequential("PuRd", limit = c(0, 1)) +
+    {
+      if (area == "EU")
+        geom_sf(data = shp_eu,
+                fill = "transparent",
+                color = "black")
+    } +
+    {
+      if (area == "EU")
+        coord_sf(c(-20, 40), c(30, 60))
+    } +
+    {
+      if (area == "US")
+        geom_sf(data = us_States_Sf,
+                fill = "transparent",
+                color = "black")
+    } +
+    theme_bw(base_size = 15)
+  
+  return(p1)
+}
+#======================================================================
 library(RColorBrewer)
 breaks_plot <-seq(-0.5,0.5,0.1)
 n <- breaks_plot %>%  length()
