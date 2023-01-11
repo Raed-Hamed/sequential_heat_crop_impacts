@@ -309,7 +309,10 @@ def kdd_gdd_per_months(grid_cells, tmax, tmin, moisture, thr_spring, thr_summer,
     moisture_spring[:,:,:] = np.nan
     moisture_summer = np.empty(shape_kdd)
     moisture_summer[:,:,:] = np.nan
-    
+    mean_tmax_spring = np.empty(shape_kdd)
+    mean_tmax_spring[:,:,:] = np.nan
+    mean_tmax_summer = np.empty(shape_kdd)
+    mean_tmax_summer[:,:,:] = np.nan
     
     tmax_spring = tmax[spring_start:spring_end, lat, lon, :]
     tmin_spring = tmin[spring_start:spring_end, lat, lon, :]
@@ -331,7 +334,11 @@ def kdd_gdd_per_months(grid_cells, tmax, tmin, moisture, thr_spring, thr_summer,
     moisture_summer_gridcell = moisture[summer_start:summer_end, lat, lon, :]
     moisture_summer[:, lat, lon] = np.mean(moisture_summer_gridcell, axis=0).T
     
-    return kdd_spring, kdd_summer, gdd_spring, gdd_summer, moisture_spring, moisture_summer
+    #mean tmax
+    mean_tmax_spring[:, lat, lon]  = np.mean(tmax_spring, axis=0).T
+    mean_tmax_summer[:, lat, lon]  = np.mean(tmax_summer, axis=0).T
+    
+    return kdd_spring, kdd_summer, gdd_spring, gdd_summer, mean_tmax_spring, mean_tmax_summer, moisture_spring, moisture_summer
 
 def compute_kdd(tmax_season, t_high_season):
     kdd_daily = tmax_season - t_high_season
