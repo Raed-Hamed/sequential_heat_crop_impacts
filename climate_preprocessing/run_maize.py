@@ -124,8 +124,8 @@ save_outputs(path_output, filename_output, kdd_spring_m, kdd_summer_m, gdd_sprin
 
 """Plotting"""
 from functions import plot_map
+plot_map(mean_tmax_spring_m[3,:,:], lat_tmax, lon_tmax)
 
-plot_map(mean_tmax_spring_m[0,:,:], lat_tmax, lon_tmax)
 
 # year = 0
 # lat = 82

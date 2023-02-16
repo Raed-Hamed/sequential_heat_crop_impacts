@@ -330,13 +330,13 @@ def kdd_gdd_per_months(grid_cells, tmax, tmin, moisture, thr_spring, thr_summer,
     
     #soil moisture
     moisture_spring_gridcell = moisture[spring_start:spring_end, lat, lon, :]
-    moisture_spring[:, lat, lon] = np.mean(moisture_spring_gridcell, axis=0).T
+    moisture_spring[:, lat, lon] = np.nanmean(moisture_spring_gridcell, axis=0).T
     moisture_summer_gridcell = moisture[summer_start:summer_end, lat, lon, :]
-    moisture_summer[:, lat, lon] = np.mean(moisture_summer_gridcell, axis=0).T
+    moisture_summer[:, lat, lon] = np.nanmean(moisture_summer_gridcell, axis=0).T
     
     #mean tmax
-    mean_tmax_spring[:, lat, lon]  = np.mean(tmax_spring, axis=0).T
-    mean_tmax_summer[:, lat, lon]  = np.mean(tmax_summer, axis=0).T
+    mean_tmax_spring[:, lat, lon]  = np.nanmean(tmax_spring, axis=0).T
+    mean_tmax_summer[:, lat, lon]  = np.nanmean(tmax_summer, axis=0).T
     
     return kdd_spring, kdd_summer, gdd_spring, gdd_summer, mean_tmax_spring, mean_tmax_summer, moisture_spring, moisture_summer
 
