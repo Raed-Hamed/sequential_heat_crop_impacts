@@ -1,7 +1,10 @@
 """
 Created on Thu Oct  6 16:06:41 2022
-@author: carmensteinmann
+=======
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
+
 from pathlib import Path
 import xarray as xr
 import numpy as np
@@ -46,6 +49,7 @@ thr_summer = [t_base_summer, t_optimum_summer, t_high_summer, gdd_max_summer]
 
 #spring_dates = [spring_start, spring_end]
 #summer_dates = [summer_start, summer_end]
+
 
 
 # #spring and summer defined by specific months
@@ -122,19 +126,25 @@ moisture, lat_moisture, lon_moisture, time_moisture = read_moisture(path_moistur
   moisture_spring_m, moisture_summer_m] = kdd_gdd_per_months(grid_cells, tmax, tmin, moisture, 
                                                               thr_spring, thr_summer,
                                                               spring_dates_m, summer_dates_m)                                                          
-                                                    
+
+filename_output = 'soy_AM_JA.nc'                                                     
 save_outputs(path_output, filename_output, kdd_spring_m, kdd_summer_m, gdd_spring_m, gdd_summer_m, 
-              mean_tmax_spring_m, mean_tmax_summer_m, moisture_spring_m, moisture_summer_m, time_tmax, lat_tmax, lon_tmax) 
+             mean_tmax_spring_m, mean_tmax_summer_m, moisture_spring_m, moisture_summer_m, time_tmax, lat_tmax, lon_tmax) 
+
 
 
 """Plotting"""
 from functions import plot_map
-
 plot_map(mean_tmax_spring_m[3,:,:], lat_tmax, lon_tmax)
+
 
 # year = 0
 # lat = 82
 # lon = 140
 # season = 'summer'
 # filename = 'kdd_gdd_vis.pdf'
+
+
 # plot_gdd_kdd(year, lat, lon, tmax, tmin, harvest_end_mean, thr_summer, summer_dates, season, filename)
+
+
