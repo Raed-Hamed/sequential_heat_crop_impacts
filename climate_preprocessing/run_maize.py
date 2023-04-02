@@ -51,12 +51,20 @@ spring_dates = [spring_start, spring_end]
 summer_dates = [summer_start, summer_end]
 
 
+# #spring and summer defined by specific months
+# spring_dates_m = [90, 151] #April and May
+# # summer_dates_m = [152, 212] # June and July
+# # spring_dates_m = [121, 151] # May
+# # summer_dates_m = [182, 212] # July
+# summer_dates_m = [182, 243] # July and August
+
 #spring and summer defined by specific months
-spring_dates_m = [90, 151] #April and May
+spring_dates_m = [90, 243] #April and May
 # summer_dates_m = [152, 212] # June and July
 # spring_dates_m = [121, 151] # May
 # summer_dates_m = [182, 212] # July
-summer_dates_m = [182, 243] # July and August
+summer_dates_m = [90, 243] # July and August
+filename_output = 'maize_AA_AA.nc' 
 
 #specify temperature and soil data path and harvest date file
 path_plant_day = Path('/Volumes/Files/WCR/2022/sequential_heat/data/crop_maps/plant_doy_mean_Maize.crop.calendar.nc')
@@ -117,7 +125,7 @@ moisture, lat_moisture, lon_moisture, time_moisture = read_moisture(path_moistur
   moisture_spring_m, moisture_summer_m] = kdd_gdd_per_months(grid_cells, tmax, tmin, moisture, 
                                                               thr_spring, thr_summer,
                                                               spring_dates_m, summer_dates_m)                                                          
-filename_output = 'maize_AM_JA.nc'                                                     
+                                                  
 save_outputs(path_output, filename_output, kdd_spring_m, kdd_summer_m, gdd_spring_m, gdd_summer_m, 
              mean_tmax_spring_m, mean_tmax_summer_m, moisture_spring_m, moisture_summer_m, time_tmax, lat_tmax, lon_tmax) 
 
