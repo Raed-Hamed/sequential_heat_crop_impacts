@@ -60,24 +60,34 @@ thr_summer = [t_base_summer, t_optimum_summer, t_high_summer, gdd_max_summer]
 # summer_dates_m = [182, 243] # July and August
 # filename_output = 'soy_AM_JA.nc' 
 
+# #spring and summer defined by specific months
+# spring_dates_m = [90, 243] #July and August
+# # summer_dates_m = [152, 212] # June and July
+# # spring_dates_m = [121, 151] # May
+# # summer_dates_m = [182, 212] # July
+# summer_dates_m = [90, 243] # July and August
+# filename_output = 'soy_AA_AA.nc' 
+
 #spring and summer defined by specific months
-spring_dates_m = [90, 243] #April and May
-# summer_dates_m = [152, 212] # June and July
-# spring_dates_m = [121, 151] # May
-# summer_dates_m = [182, 212] # July
-summer_dates_m = [90, 243] # July and August
-filename_output = 'soy_AA_AA.nc' 
+spring_dates_m = [32, 90] # Feb March 
+summer_dates_m = [121, 181] # May and June
+filename_output = 'wheat_FM_MJ.nc' 
+# spring_dates_m = [60, 120] # March April
+# summer_dates_m = [152, 212] # June July
+# filename_output = 'wheat_MA_JJ.nc' 
 
 
 #specify temperature and soil data path and harvest date file
-path_plant_day = Path('/Volumes/Files/WCR/2022/sequential_heat/data/crop_maps/plant_doy_mean_soybean.crop.calendar.nc')
-path_harvest_day = Path('/Volumes/Files/WCR/2022/sequential_heat/data/crop_maps/harvest_doy_mean_soybean.crop.calendar.nc')
+# path = '/Volumes/Files/WCR/2022/sequential_heat/data'
+path = '/Users/carmenst/Desktop/data'
+path_plant_day = Path(path+'/crop_maps/plant_doy_mean_soybean.crop.calendar.nc')
+path_harvest_day = Path(path+'/crop_maps/harvest_doy_mean_soybean.crop.calendar.nc')
 
-path_tmax =  Path('/Volumes/Files/WCR/2022/sequential_heat/data/output/tmax180')
-path_tmin =  Path('/Volumes/Files/WCR/2022/sequential_heat/data/output/tmin180') 
-path_moisture = Path('/Volumes/Files/WCR/2022/sequential_heat/data/SMroot_1980-2021_GLEAM_v3.6a_daily_remap05.nc')
+path_tmax =  Path(path+'/output/tmax180')
+path_tmin =  Path(path+'/output/tmin180') 
+path_moisture = Path(path+'/SMroot_1980-2021_GLEAM_v3.6a_daily_remap05.nc')
 
-path_output = Path('/Volumes/Files/WCR/2022/sequential_heat/data/output')
+path_output = Path(path+'/output')
 
 
 """Executing functions"""
@@ -127,7 +137,7 @@ moisture, lat_moisture, lon_moisture, time_moisture = read_moisture(path_moistur
                                                               thr_spring, thr_summer,
                                                               spring_dates_m, summer_dates_m)                                                          
 
-filename_output = 'soy_AM_JA.nc'                                                     
+# filename_output = 'soy_AM_JA.nc'                                                     
 save_outputs(path_output, filename_output, kdd_spring_m, kdd_summer_m, gdd_spring_m, gdd_summer_m, 
              mean_tmax_spring_m, mean_tmax_summer_m, moisture_spring_m, moisture_summer_m, time_tmax, lat_tmax, lon_tmax) 
 
