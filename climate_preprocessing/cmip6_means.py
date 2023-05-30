@@ -11,13 +11,11 @@ import xarray as xr
 import numpy as np
 from glob import iglob
 from pathlib import Path
-import pandas as pd
 import geopandas as gpd
-from rasterio import features
-from affine import Affine
 import rasterstats as rstats
 import rasterio as rio
-
+import xesmf as xe
+import pandas as pd
 
 def create_mean(rootdir_glob, nr_years, old_time_period):
     # This will return absolute paths
@@ -85,6 +83,7 @@ def compute_difference(path_future_output):
                                        lon=(["lon"], ds_mean_fut.lon.values),
                                        )    
                                )
+        
         ds_output.attrs = ds_mean_his.attrs
         
         new_filename = fut_file.replace("future", "future-historic")
@@ -104,13 +103,10 @@ def compute_difference(path_future_output):
 
 
 def compute_mean_per_county(path_input):
-
-    path_soy = '/Users/carmenst/Documents/CLIMADA/own_projects/sequential_heat_crop_impacts/shapefiles/input/soybean_us_counties.shp'
-    shapefile_soy = gpd.read_file(path_soy)
-    path_corn = '/Users/carmenst/Documents/CLIMADA/own_projects/sequential_heat_crop_impacts/shapefiles/input/corn_us_counties.shp'
-    shapefile_corn = gpd.read_file(path_corn)
     
-    crops_shapefile = pd.concat([shapefile_soy,shapefile_corn]).drop_duplicates().reset_index(drop=True)
+    us_shp_file = '/Users/carmenst/Documents/Polybox/WCR/Conferences_summerschools/2022_10_Como/Project/Sequential_heat_crops/Data/shapefiles/input/gadm36_USA_2.shp'
+    crops_shapefile = gpd.read_file(us_shp_file)
+ 
     
     dir_list = [f for f in iglob(path_input, recursive=True) if os.path.isdir(f)][2:]
     
@@ -123,27 +119,383 @@ def compute_mean_per_county(path_input):
             
             # open file containing diffence in mean per model
             ds = xr.open_dataset(file)
-                
-            #get corresponding future file:
-            fut_file0 = file.replace("future-historic", "future")
-            fut_file1 = fut_file0.replace("difference", "2015-2100")
-            fut_file2= fut_file1.replace("output", "input")
-                
-            # get affine of nc-file with rasterio
-            affine = rio.open(fut_file2).transform
-                
+    
+            _, _, _, _, _, _, _, _, _, _, _, _, _, _, reference, percentile, f_increase, ssp,filename = file.split('/')
+            _, _, _, model, _, _, nr_percen = filename.split('_')
             
-            # go through all geometries and compute zonal statistics
-            list_model_run =[]
-            for shape in crops_shapefile.geometry:
-                list_model_run.append(rstats.zonal_stats(shape, ds['diff'].values.T, affine=affine, stats="mean", all_touched=True)[0]['mean'])
+            mean_per_county = fct_mean_per_county(ds, model, 'diff', crops_shapefile)            
+            multi_models[:, file_idx] = mean_per_county
             
-            multi_models[:, file_idx] = np.asarray(list_model_run)
+            # #get corresponding future file:
+            # fut_file0 = file.replace("future-historic", "future")
+            # fut_file1 = fut_file0.replace("difference", "2015-2100")
+            # fut_file2= fut_file1.replace("output", "input")
+                
+            # # get affine of nc-file with rasterio
+            # affine = rio.open(fut_file2).transform
+            
+            # # go through all geometries and compute zonal statistics
+            # list_model_run =[]
+            # for shape in crops_shapefile.geometry:
+            #     list_model_run.append(rstats.zonal_stats(shape, ds['diff'].values.T, affine=affine, stats="mean", all_touched=True)[0]['mean'])
+            
+            # multi_models[:, file_idx] = np.asarray(list_model_run)
         
-        _, _, _, _, _, _, _, _, _, _, ssp, season = directory.split('/')
+        _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ssp, season = directory.split('/')
         crops_shapefile[ssp+'_'+season] = np.nanmean(multi_models, axis=1)
     
     return crops_shapefile
+
+
+
+def compute_diff_per_model(path_input):
+    
+    us_shp_file = '/Users/carmenst/Documents/Polybox/WCR/Conferences_summerschools/2022_10_Como/Project/Sequential_heat_crops/Data/shapefiles/input/gadm36_USA_2.shp'
+    crops_shapefile = gpd.read_file(us_shp_file)
+    
+    dir_list = [f for f in iglob(path_input, recursive=True) if os.path.isdir(f)][2:]
+    
+    for directory in dir_list:
+        file_list = [f for f in iglob(directory+'/*', recursive=True) if os.path.isfile(f)]
+    
+        model_dif = np.zeros((crops_shapefile.shape[0]))
+        
+        _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ssp, season = directory.split('/')
+        
+        for file_idx, file in enumerate(file_list):
+           #variable naming
+            _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, filename = file.split('/')
+            _, _, model, _, _, _ = filename.split('_')
+            
+            # open file containing diffence in mean per model
+            ds = xr.open_dataset(file)
+                
+            # #get corresponding future file:
+            # fut_file0 = file.replace("future-historic", "future")
+            # fut_file1 = fut_file0.replace("difference", "2015-2100")
+            # fut_file2= fut_file1.replace("output", "input")
+                
+            # # get affine of nc-file with rasterio
+            # affine = rio.open(fut_file2).transform
+                
+            
+            # # go through all geometries and compute zonal statistics
+            # list_model_run =[]
+            # for shape in crops_shapefile.geometry:
+            #     list_model_run.append(rstats.zonal_stats(shape, ds['diff'].values.T, affine=affine, stats="mean", all_touched=True)[0]['mean'])
+            
+            mean_per_county = fct_mean_per_county(ds, model, 'diff', crops_shapefile)            
+            model_dif[:] = mean_per_county
+            crops_shapefile[ssp[3:]+'_'+season[:2]+'_M'+str(file_idx)] = mean_per_county
+            
+            # model_dif[:] = np.asarray(list_model_run)
+            # crops_shapefile[ssp[3:]+'_'+season[:2]+'_M'+str(file_idx)] = np.asarray(list_model_run)
+            
+            
+    return crops_shapefile
+
+
+def compute_frequency(path_input, nr_years, percentile, reference, ssps):
+    
+    #reference can be the given percentile for the hist or the fut time span
+    
+    dir_list = [f for f in iglob(path_input, recursive=True) if os.path.isdir(f)]
+    
+    for directory in dir_list:
+        file_list = [f for f in iglob(directory+'/*', recursive=True) if os.path.isfile(f)]
+    
+        # multi_models = np.zeros((crops_shapefile.shape[0], len(file_list)))
+        
+        for file_idx, file in enumerate(file_list):
+            
+            # open file containing diffence in mean per model
+            ds_his = xr.open_dataset(file)
+            tmax_his = ds_his.tasmax.values[-nr_years:, :, :]
+            percentile_his = np.percentile(tmax_his, percentile, axis=0)            
+            
+            diff_his_perc = tmax_his[:] - percentile_his
+            diff_his_perc[diff_his_perc<=0] = 0
+            diff_his_perc[diff_his_perc>0] = 1
+            # greater_than_perc = np.sum(diff_his_perc, axis=0)
+            
+            new_file = file.replace("historic/input", "frequencies/reference_"+reference+"/percentile_"+str(percentile)+"/exceedances/hist")
+            new_file1 = new_file.replace("1961-2014", str(percentile))
+            
+            ds_output = xr.Dataset(data_vars=dict(frequency=(["time", "lat", "lon"], diff_his_perc),
+                                           ),
+                                   coords=dict(                           
+                                           time=(["time"], ds_his.time.values[-nr_years:]),
+                                           lat=(["lat"], ds_his.lat.values),
+                                           lon=(["lon"], ds_his.lon.values),
+                                           )    
+                                   )
+            
+            ds_output.attrs = ds_his.attrs
+            
+            Path(os.path.dirname(new_file1)).mkdir(parents=True, exist_ok=True)
+            
+            ds_output.to_netcdf(new_file1)
+            ds_output.close()
+                
+            #get corresponding future file:
+            for ssp in ssps:
+                fut_file0 = file.replace("historic/input", "future/input/"+ssp)
+                fut_file1 = fut_file0.replace("1961-2014", "2015-2100")
+                fut_file2 = fut_file1.replace("hist", ssp)
+                
+                try:
+                   if os.path.isfile(fut_file2):
+                       ds_fut = xr.open_dataset(fut_file2)
+                       tmax_fut = ds_fut.tasmax.values[-nr_years:, :, :]
+                       if reference == 'historic':
+                           diff_fut_perc = tmax_fut[:] - percentile_his
+                           diff_fut_perc[diff_fut_perc<=0] = 0
+                           diff_fut_perc[diff_fut_perc>0] = 1
+                       elif reference == 'future':
+                           percentile_fut = np.percentile(tmax_fut, percentile, axis=0) 
+                           diff_fut_perc = tmax_fut[:] - percentile_fut
+                           diff_fut_perc[diff_fut_perc<=0] = 0
+                           diff_fut_perc[diff_fut_perc>0] = 1
+                           
+                           
+                       new_file = file.replace("historic/input", "frequencies/reference_"+reference+"/percentile_"+str(percentile)+"/exceedances/"+ssp)
+                       new_file1 = new_file.replace("1961-2014", str(percentile))
+                       new_file2 = new_file1.replace("/hist", "/"+ssp)
+                    
+                       ds_output = xr.Dataset(data_vars=dict(frequency=(["time", "lat", "lon"], diff_fut_perc),
+                                                    ),
+                                            coords=dict(                           
+                                                    time=(["time"], ds_fut.time.values[-nr_years:]),
+                                                    lat=(["lat"], ds_fut.lat.values),
+                                                    lon=(["lon"], ds_fut.lon.values),
+                                                    )    
+                                            )
+                    
+                       ds_output.attrs = ds_fut.attrs
+                    
+                       Path(os.path.dirname(new_file2)).mkdir(parents=True, exist_ok=True)
+                    
+                       ds_output.to_netcdf(new_file2)
+                       ds_output.close()
+                           
+                       
+                except Exception:
+                   print('Does not exist')
+                
+                
+
+def compute_frequency_change(path_input):
+    
+    file_list = [f for f in iglob(path_input+'/*/spring/*', recursive=True) if os.path.isfile(f)]
+        
+    for file in file_list:
+        ds_spring = xr.open_dataset(file)
+        f_spring = ds_spring.frequency.values
+        
+        file_su0 = file.replace("spring", "summer")
+        file_su = file_su0.replace("sp_", "su_")
+        ds_su = xr.open_dataset(file_su)
+        f_su = ds_su.frequency.values
+        
+        coincide = np.where(f_spring+f_su ==2)
+        coincide_matrix = np.zeros(f_spring.shape)
+        coincide_matrix[coincide] = 1
+        nr_coincides = np.sum(coincide_matrix, axis=0)
+        
+        
+        new_file = file.replace("exceedances", "frequency")
+        new_file1 = new_file.replace("spring/sp_", "coincide_")
+        
+        ds_output = xr.Dataset(data_vars=dict(frequency=(["lat", "lon"], nr_coincides),
+                                        ),
+                                coords=dict(                           
+                                        lat=(["lat"], ds_spring.lat.values),
+                                        lon=(["lon"], ds_spring.lon.values),
+                                        )    
+                                )
+        
+        ds_output.attrs = ds_spring.attrs
+        
+        Path(os.path.dirname(new_file1)).mkdir(parents=True, exist_ok=True)
+        
+        ds_output.to_netcdf(new_file1)
+        ds_output.close()
+        
+
+def comparison_fut_his(path, ssp):
+    
+    files_his = [f for f in iglob(path+'/'+ssp+'/*', recursive=True) if os.path.isfile(f)]
+
+    for file in files_his:
+        ds_fut = xr.open_dataset(file)
+        co_fut = ds_fut.frequency.values
+        
+        file_his = file.replace(ssp, "hist")
+        ds_his = xr.open_dataset(file_his)
+        co_his = ds_his.frequency.values
+        
+        # f_increase = co_fut/co_his
+        f_increase = (co_fut/co_his)-1
+        
+        new_file = file.replace("frequency", "frequency increase")
+        new_file1 = new_file.replace("coincide_", "f_change_")
+        
+        ds_output = xr.Dataset(data_vars=dict(f_change=(["lat", "lon"], f_increase),
+                                        ),
+                                coords=dict(                           
+                                        lat=(["lat"], ds_his.lat.values),
+                                        lon=(["lon"], ds_his.lon.values),
+                                        )    
+                                )
+        
+        ds_output.attrs = ds_fut.attrs
+        
+        Path(os.path.dirname(new_file1)).mkdir(parents=True, exist_ok=True)
+        
+        ds_output.to_netcdf(new_file1)
+        ds_output.close()
+            
+
+def compute_f_mean(path):
+        
+    us_shp_file = '/Users/carmenst/Documents/Polybox/WCR/Conferences_summerschools/2022_10_Como/Project/Sequential_heat_crops/Data/shapefiles/input/gadm36_USA_2.shp'
+    crops_shapefile = gpd.read_file(us_shp_file)
+    
+    files_his = [f for f in iglob(path+'/*', recursive=True) if os.path.isfile(f)]
+    multi_models = np.zeros((crops_shapefile.shape[0], len(files_his)))
+    
+    
+    for idx, file in enumerate(files_his):
+        ds = xr.open_dataset(file)
+        ds['f_change'].values[ds['f_change'].values>=100] = 100000
+        # f_increase[idx, :, :] = ds.f_change.values
+        
+        _, _, _, _, _, _, _, _, _, _, _, _, _, _, reference, percentile, f_increase, ssp,filename = file.split('/')
+        # file_name_affine0 = file.replace("frequencies", "future")
+        # file_name_affine1 = file_name_affine0.replace(reference, "input")
+        # file_name_affine2 = file_name_affine1.replace("/"+ssp, "/spring")
+        # file_name_affine3 = file_name_affine2.replace(percentile+'/'+f_increase, ssp)
+        # file_name_affine4 = file_name_affine3.replace("f_change", "sp")
+        _, _, _, model, _, _, nr_percen = filename.split('_')
+        # file_name_affine5= file_name_affine4.replace(nr_percen, "2015-2100.nc")
+        # file_name_affine6= file_name_affine5.replace("hist", ssp)
+        
+        # # get affine of nc-file with rasterio
+        # affine = rio.open(file_name_affine6).transform
+            
+        # from rasterio.mask import mask
+        # raster_test = rio.open(file).read(1)
+        # rds = rio.open(file)
+        # df = rds.squeeze().to_dataframe().reset_index()
+
+        
+        
+        # go through all geometries and compute zonal statistics
+        # list_model_run =[]
+        # for shape in crops_shapefile.geometry:
+        #     # list_model_run.append(rstats.zonal_stats(shape, ds['f_change'].values.T, 
+        #     #                                           affine=affine, stats="mean", 
+        #     #                                           all_touched=True)[0]['mean'])
+        #     # list_model_run.append(mask(raster_test, shape crop=True))
+            
+        #     clipped = gpd.clip(gdf, shape)
+        #     list_model_run.append(np.nanmean(gdf.loc[clipped.index,0].values))
+        
+        ds_out = regrid_cmip6(ds, model, 'f_change')
+        gdf = create_gdf(ds_out)
+        
+        points_polys = gpd.sjoin(gdf, crops_shapefile, how="left")
+        stats_pt = points_polys.groupby('index_right')[0].agg(['mean'])
+        result = pd.merge(crops_shapefile, stats_pt , left_index=True, right_index=True,how='outer')
+        
+        multi_models[:, idx] = np.asarray(result['mean'].values)
+    
+    
+
+    new_file1 = file.replace(reference+'/'+percentile+'/'+f_increase+'/'+ssp, '/result')
+    new_file2 = new_file1.replace(filename, 'f_change_relative_'+ssp+'_'+reference+'_'+percentile+'.shp')
+    
+    idx_unprece = np.where(multi_models == 100000)
+    mask_unprece = np.zeros(multi_models.shape)
+    mask_unprece[idx_unprece] = 1
+    perc_unprece = (np.sum(mask_unprece, axis=1))/len(files_his)
+    
+    increase_agreement = np.zeros(multi_models.shape)
+    increase_agreement[np.where(multi_models >0)] = 1
+    
+    # remove nan values
+    multi_models[idx_unprece] = np.nan
+    
+    # multi model mean (disregarding nan values) and percentage of models predicting an increase in co-occurence
+    crops_shapefile['mean_incre'] = np.nanmean(multi_models, axis=1)
+    crops_shapefile['%M_incre'] = np.sum(increase_agreement, axis=1)/len(files_his)
+    
+    # percentage of models agreeing in amplitude of frequency change
+    oom_of_mean = np.zeros(multi_models.shape)
+    std = np.nanstd(multi_models, axis=1)
+    larger_than_min = np.where(multi_models >(crops_shapefile['mean_incre'].values-std)[:,None])
+    smaller_than_max = np.where(multi_models <(crops_shapefile['mean_incre'].values+std)[:,None])
+    oom_of_mean[larger_than_min and smaller_than_max] = 1
+    percen_m_increase = (np.sum(oom_of_mean, axis=1))/len(files_his)
+    crops_shapefile['%M_ampli'] = percen_m_increase
+    
+    # save percentage of models predicting unprecedented hot-hot extremes
+    crops_shapefile['%M_unpre'] = perc_unprece
+    
+    crops_shapefile.to_file(new_file2)
+    
+
+def fct_mean_per_county(ds, model, var_name, crops_shapefile):
+    ds_out = regrid_cmip6(ds, model, var_name)
+    gdf = create_gdf(ds_out, var_name)            
+    points_polys = gpd.sjoin(gdf, crops_shapefile, how="left")
+    stats_pt = points_polys.groupby('index_right')[0].agg(['mean'])
+    result = pd.merge(crops_shapefile, stats_pt , left_index=True, right_index=True,how='outer')
+    mean_per_county = np.asarray(result['mean'].values)
+    
+    return mean_per_county
+
+def regrid_cmip6(ds, model, var_name):
+    
+    regridder_dir = '/Users/carmenst/Documents/Polybox/WCR/Conferences_summerschools/2022_10_Como/Project/Sequential_heat_crops/Data/Climate/regridder'
+    regridder_file = regridder_dir+'/regridder_'+model+'.nc'
+    
+    ds_lat = ds.lat.values
+    ds_lon = ds.lon.values-360
+    
+    ds_in = xr.Dataset(
+        {
+            "lat": (["lat"], ds_lat, {"units": "degrees_north"}),
+            "lon": (["lon"], ds_lon, {"units": "degrees_east"}),
+        }
+    )
+    
+    ds_out = xr.Dataset(
+        {
+            "lat": (["lat"], np.arange(np.min(ds_lat), np.max(ds_lat), 0.1), {"units": "degrees_north"}),
+            "lon": (["lon"], np.arange(np.min(ds_lon), np.max(ds_lon), 0.1), {"units": "degrees_east"}),
+        }
+    )
+    
+    
+    if os.path.isfile(regridder_file):
+        regridder = xe.Regridder(ds_in, ds_out, 'conservative', weights=regridder_file)
+    else:
+        regridder = xe.Regridder(ds_in, ds_out, "conservative", ignore_degenerate=True)
+        regridder.to_netcdf(regridder_file)        
+    
+    regridded_ds = regridder(ds[var_name].values)    
+    ds_out[var_name] = (('lat', 'lon'), regridded_ds)
+    
+    return ds_out
+
+def create_gdf(ds, var_name):
+    lon1, lat1 = np.meshgrid(ds.lon.values, ds.lat.values)
+    geometry = gpd.points_from_xy(lon1.flatten(), lat1.flatten())
+    gdf = gpd.GeoDataFrame(ds[var_name].values.flatten(), crs="EPSG:4326", geometry=geometry)
+    
+    
+    return gdf
 
 # """Compute mean per time period and grid cell for historic and future time period"""
 # # future
@@ -166,15 +518,53 @@ def compute_mean_per_county(path_input):
 
 
 """Compute value for each county"""
-path_difference = '/Users/carmenst/Documents/CLIMADA/own_projects/sequential_heat_crop_impacts/CMIP6_DATA/future-historic/output/**/*' 
-crops_shapefile = compute_mean_per_county(path_difference)
-crops_shapefile.to_file('counties_multi_model_mean.shp')
+path_difference = '/Users/carmenst/Documents/Polybox/WCR/Conferences_summerschools/2022_10_Como/Project/Sequential_heat_crops/Data/Climate/CMIP6/future-historic/output/**/*' 
+# # crops_shapefile = compute_mean_per_county(path_difference)
+# # crops_shapefile.to_file('counties_multi_model_mean.shp')
+crops_shapefile = compute_diff_per_model(path_difference)
+crops_shapefile.to_file('counties_difference_per_model.shp')
 
-# with rasterio.open("/path/to/raster.tif") as src:
-#     affine = src.transform
-#     array = src.read(1)
-# df_zonal_stats = pd.DataFrame(zonal_stats(shapefile_soy, tmax, affine=affine))
+#compute exceedances of thr
+path_historic = '/Users/carmenst/Documents/Polybox/WCR/Conferences_summerschools/2022_10_Como/Project/Sequential_heat_crops/Data/Climate/CMIP6/historic/input/**/*' 
+nr_years = 40
+percentiles = [50, 75]
+references = ['historic', 'future']
+ssps= ['ssp245', 'ssp370']
 
-# # adding statistics back to original GeoDataFrame
-# gdf2 = pd.concat([gdf, df_zonal_stats], axis=1)
+# us_shp_file = '/Users/carmenst/Documents/Polybox/WCR/Conferences_summerschools/2022_10_Como/Project/Sequential_heat_crops/Data/shapefiles/input/gadm36_USA_2.shp'
+# shp_US = gpd.read_file(us_shp_file)
 
+
+# for percentile in percentiles: 
+#     percentile_str = '/percentile_'+str(percentile)
+#     for reference in references:
+#         reference_str = '/reference_'+reference
+        
+# #         # # frequency
+# #         # compute_frequency(path_historic, nr_years, percentile, reference, ssps)
+        
+# #         # # frequency change
+# #         # path_scenario = '/Users/carmenst/Documents/Polybox/WCR/Conferences_summerschools/2022_10_Como/Project/Sequential_heat_crops/Data/Climate/CMIP6/frequencies' +(
+# #         #     reference_str+ percentile_str +'/exceedances')
+# #         # compute_frequency_change(path_scenario)
+        
+#         for ssp in ssps:
+# #             # occurence of hot-hot events in the past and future
+# #             # path_cooccurrence = '/Users/carmenst/Documents/Polybox/WCR/Conferences_summerschools/2022_10_Como/Project/Sequential_heat_crops/Data/Climate/CMIP6/frequencies' + (
+# #             #     reference_str+ percentile_str +'/frequency')
+# #             # comparison_fut_his(path_cooccurrence, ssp)
+            
+#             # compare changes in co-occurence
+#             path = '/Users/carmenst/Documents/Polybox/WCR/Conferences_summerschools/2022_10_Como/Project/Sequential_heat_crops/Data/Climate/CMIP6/frequencies'+(
+#                 reference_str+percentile_str +'/frequency increase/'+ssp)
+#             compute_f_mean(path)
+
+
+# # import geopandas as gpd
+# us_shp_file ='/Users/carmenst/Documents/Polybox/WCR/Conferences_summerschools/2022_10_Como/Project/Sequential_heat_crops/Data/shapefiles/output/2023_05_T_diff/counties_difference_per_model.shp'
+us_shp_file ='/Users/carmenst/Documents/Polybox/WCR/Conferences_summerschools/2022_10_Como/Project/Sequential_heat_crops/Data/Climate/CMIP6/frequencies/result/f_change_relative_ssp245_reference_historic_percentile_50.shp'
+shp_US = gpd.read_file(us_shp_file)
+
+
+# missing_kwds = dict(color='grey', label='No Data')
+# result.plot(column = 'mean', missing_kwds=missing_kwds)
