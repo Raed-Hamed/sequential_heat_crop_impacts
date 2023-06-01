@@ -12,17 +12,13 @@ import numpy as np
 from glob import iglob
 from pathlib import Path
 import geopandas as gpd
-import rasterstats as rstats
-import rasterio as rio
 import xesmf as xe
 import pandas as pd
 
 def create_mean(rootdir_glob, nr_years, old_time_period):
-    # This will return absolute paths
+
     file_list = [f for f in iglob(rootdir_glob, recursive=True) if os.path.isfile(f)]
-    #output_path = rootdir_glob.replace("input/**/*", "output")
-    
-    
+
 
     for file in file_list:
         new_filename = file.replace("input", "output")
@@ -102,49 +98,34 @@ def compute_difference(path_future_output):
     # return multi_model_mean
 
 
-def compute_mean_per_county(path_input):
+# def compute_mean_per_county(path_input):
     
-    us_shp_file = '/Users/carmenst/Documents/Polybox/WCR/Conferences_summerschools/2022_10_Como/Project/Sequential_heat_crops/Data/shapefiles/input/gadm36_USA_2.shp'
-    crops_shapefile = gpd.read_file(us_shp_file)
+#     us_shp_file = '/Users/carmenst/Documents/Polybox/WCR/Conferences_summerschools/2022_10_Como/Project/Sequential_heat_crops/Data/shapefiles/input/gadm36_USA_2.shp'
+#     crops_shapefile = gpd.read_file(us_shp_file)
  
     
-    dir_list = [f for f in iglob(path_input, recursive=True) if os.path.isdir(f)][2:]
+#     dir_list = [f for f in iglob(path_input, recursive=True) if os.path.isdir(f)][2:]
     
-    for directory in dir_list:
-        file_list = [f for f in iglob(directory+'/*', recursive=True) if os.path.isfile(f)]
+#     for directory in dir_list:
+#         file_list = [f for f in iglob(directory+'/*', recursive=True) if os.path.isfile(f)]
     
-        multi_models = np.zeros((crops_shapefile.shape[0], len(file_list)))
+#         multi_models = np.zeros((crops_shapefile.shape[0], len(file_list)))
         
-        for file_idx, file in enumerate(file_list):
+#         for file_idx, file in enumerate(file_list):
             
-            # open file containing diffence in mean per model
-            ds = xr.open_dataset(file)
+#             # open file containing diffence in mean per model
+#             ds = xr.open_dataset(file)
     
-            _, _, _, _, _, _, _, _, _, _, _, _, _, _, reference, percentile, f_increase, ssp,filename = file.split('/')
-            _, _, _, model, _, _, nr_percen = filename.split('_')
+#             _, _, _, _, _, _, _, _, _, _, _, _, _, _, reference, percentile, f_increase, ssp,filename = file.split('/')
+#             _, _, _, model, _, _, nr_percen = filename.split('_')
             
-            mean_per_county = fct_mean_per_county(ds, model, 'diff', crops_shapefile)            
-            multi_models[:, file_idx] = mean_per_county
-            
-            # #get corresponding future file:
-            # fut_file0 = file.replace("future-historic", "future")
-            # fut_file1 = fut_file0.replace("difference", "2015-2100")
-            # fut_file2= fut_file1.replace("output", "input")
-                
-            # # get affine of nc-file with rasterio
-            # affine = rio.open(fut_file2).transform
-            
-            # # go through all geometries and compute zonal statistics
-            # list_model_run =[]
-            # for shape in crops_shapefile.geometry:
-            #     list_model_run.append(rstats.zonal_stats(shape, ds['diff'].values.T, affine=affine, stats="mean", all_touched=True)[0]['mean'])
-            
-            # multi_models[:, file_idx] = np.asarray(list_model_run)
+#             mean_per_county = fct_mean_per_county(ds, model, 'diff', crops_shapefile)            
+#             multi_models[:, file_idx] = mean_per_county
         
-        _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ssp, season = directory.split('/')
-        crops_shapefile[ssp+'_'+season] = np.nanmean(multi_models, axis=1)
+#         _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ssp, season = directory.split('/')
+#         crops_shapefile[ssp+'_'+season] = np.nanmean(multi_models, axis=1)
     
-    return crops_shapefile
+#     return crops_shapefile
 
 
 
@@ -158,39 +139,25 @@ def compute_diff_per_model(path_input):
     for directory in dir_list:
         file_list = [f for f in iglob(directory+'/*', recursive=True) if os.path.isfile(f)]
     
-        model_dif = np.zeros((crops_shapefile.shape[0]))
+        # model_dif = np.zeros((crops_shapefile.shape[0]))
+        multi_models = np.zeros((crops_shapefile.shape[0], len(file_list)))
         
         _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ssp, season = directory.split('/')
         
         for file_idx, file in enumerate(file_list):
-           #variable naming
+            
+            #get model name for regridding
             _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, filename = file.split('/')
             _, _, model, _, _, _ = filename.split('_')
             
             # open file containing diffence in mean per model
             ds = xr.open_dataset(file)
-                
-            # #get corresponding future file:
-            # fut_file0 = file.replace("future-historic", "future")
-            # fut_file1 = fut_file0.replace("difference", "2015-2100")
-            # fut_file2= fut_file1.replace("output", "input")
-                
-            # # get affine of nc-file with rasterio
-            # affine = rio.open(fut_file2).transform
-                
-            
-            # # go through all geometries and compute zonal statistics
-            # list_model_run =[]
-            # for shape in crops_shapefile.geometry:
-            #     list_model_run.append(rstats.zonal_stats(shape, ds['diff'].values.T, affine=affine, stats="mean", all_touched=True)[0]['mean'])
-            
+
             mean_per_county = fct_mean_per_county(ds, model, 'diff', crops_shapefile)            
-            model_dif[:] = mean_per_county
+            multi_models[:, file_idx] = mean_per_county
             crops_shapefile[ssp[3:]+'_'+season[:2]+'_M'+str(file_idx)] = mean_per_county
-            
-            # model_dif[:] = np.asarray(list_model_run)
-            # crops_shapefile[ssp[3:]+'_'+season[:2]+'_M'+str(file_idx)] = np.asarray(list_model_run)
-            
+    
+        crops_shapefile[ssp[3:]+'_'+season[:2]+'_mean'] = np.nanmean(multi_models, axis=1)
             
     return crops_shapefile
 
@@ -306,20 +273,23 @@ def compute_frequency_change(path_input):
         new_file = file.replace("exceedances", "frequency")
         new_file1 = new_file.replace("spring/sp_", "coincide_")
         
-        ds_output = xr.Dataset(data_vars=dict(frequency=(["lat", "lon"], nr_coincides),
-                                        ),
-                                coords=dict(                           
-                                        lat=(["lat"], ds_spring.lat.values),
-                                        lon=(["lon"], ds_spring.lon.values),
-                                        )    
-                                )
+        dict_var = dict(frequency=(["lat", "lon"], nr_coincides))
+        create_ds_2D(ds_spring.lat.values, ds_spring.lon.values, dict_var, new_file1)
         
-        ds_output.attrs = ds_spring.attrs
+        # ds_output = xr.Dataset(data_vars=dict(frequency=(["lat", "lon"], nr_coincides),
+        #                                 ),
+        #                         coords=dict(                           
+        #                                 lat=(["lat"], ds_spring.lat.values),
+        #                                 lon=(["lon"], ds_spring.lon.values),
+        #                                 )    
+        #                         )
         
-        Path(os.path.dirname(new_file1)).mkdir(parents=True, exist_ok=True)
+        # ds_output.attrs = ds_spring.attrs
         
-        ds_output.to_netcdf(new_file1)
-        ds_output.close()
+        # Path(os.path.dirname(new_file1)).mkdir(parents=True, exist_ok=True)
+        
+        # ds_output.to_netcdf(new_file1)
+        # ds_output.close()
         
 
 def comparison_fut_his(path, ssp):
@@ -334,7 +304,6 @@ def comparison_fut_his(path, ssp):
         ds_his = xr.open_dataset(file_his)
         co_his = ds_his.frequency.values
         
-        # f_increase = co_fut/co_his
         f_increase = (co_fut/co_his)-1
         
         new_file = file.replace("frequency", "frequency increase")
@@ -348,7 +317,7 @@ def comparison_fut_his(path, ssp):
                                         )    
                                 )
         
-        ds_output.attrs = ds_fut.attrs
+        # ds_output.attrs = ds_fut.attrs
         
         Path(os.path.dirname(new_file1)).mkdir(parents=True, exist_ok=True)
         
@@ -367,64 +336,29 @@ def compute_f_mean(path):
     
     for idx, file in enumerate(files_his):
         ds = xr.open_dataset(file)
-        ds['f_change'].values[ds['f_change'].values>=100] = 100000
-        # f_increase[idx, :, :] = ds.f_change.values
+        # ds['f_change'].values[ds['f_change'].values>=100] = 100000
+        ds['f_change'].values[ds['f_change'].values>=100] = np.nan
         
         _, _, _, _, _, _, _, _, _, _, _, _, _, _, reference, percentile, f_increase, ssp,filename = file.split('/')
-        # file_name_affine0 = file.replace("frequencies", "future")
-        # file_name_affine1 = file_name_affine0.replace(reference, "input")
-        # file_name_affine2 = file_name_affine1.replace("/"+ssp, "/spring")
-        # file_name_affine3 = file_name_affine2.replace(percentile+'/'+f_increase, ssp)
-        # file_name_affine4 = file_name_affine3.replace("f_change", "sp")
         _, _, _, model, _, _, nr_percen = filename.split('_')
-        # file_name_affine5= file_name_affine4.replace(nr_percen, "2015-2100.nc")
-        # file_name_affine6= file_name_affine5.replace("hist", ssp)
         
-        # # get affine of nc-file with rasterio
-        # affine = rio.open(file_name_affine6).transform
-            
-        # from rasterio.mask import mask
-        # raster_test = rio.open(file).read(1)
-        # rds = rio.open(file)
-        # df = rds.squeeze().to_dataframe().reset_index()
+        mean_counties = fct_mean_per_county(ds, model, 'f_change', crops_shapefile)
+        
+        multi_models[:, idx] = mean_counties  
 
-        
-        
-        # go through all geometries and compute zonal statistics
-        # list_model_run =[]
-        # for shape in crops_shapefile.geometry:
-        #     # list_model_run.append(rstats.zonal_stats(shape, ds['f_change'].values.T, 
-        #     #                                           affine=affine, stats="mean", 
-        #     #                                           all_touched=True)[0]['mean'])
-        #     # list_model_run.append(mask(raster_test, shape crop=True))
-            
-        #     clipped = gpd.clip(gdf, shape)
-        #     list_model_run.append(np.nanmean(gdf.loc[clipped.index,0].values))
-        
-        ds_out = regrid_cmip6(ds, model, 'f_change')
-        gdf = create_gdf(ds_out)
-        
-        points_polys = gpd.sjoin(gdf, crops_shapefile, how="left")
-        stats_pt = points_polys.groupby('index_right')[0].agg(['mean'])
-        result = pd.merge(crops_shapefile, stats_pt , left_index=True, right_index=True,how='outer')
-        
-        multi_models[:, idx] = np.asarray(result['mean'].values)
-    
-    
-
-    new_file1 = file.replace(reference+'/'+percentile+'/'+f_increase+'/'+ssp, '/result')
+    new_file1 = file.replace(reference+'/'+percentile+'/'+f_increase+'/'+ssp,'/result')
     new_file2 = new_file1.replace(filename, 'f_change_relative_'+ssp+'_'+reference+'_'+percentile+'.shp')
     
-    idx_unprece = np.where(multi_models == 100000)
-    mask_unprece = np.zeros(multi_models.shape)
-    mask_unprece[idx_unprece] = 1
-    perc_unprece = (np.sum(mask_unprece, axis=1))/len(files_his)
+    # idx_unprece = np.where(multi_models == 100000)
+    # mask_unprece = np.zeros(multi_models.shape)
+    # mask_unprece[idx_unprece] = 1
+    # perc_unprece = (np.sum(mask_unprece, axis=1))/len(files_his)
     
     increase_agreement = np.zeros(multi_models.shape)
     increase_agreement[np.where(multi_models >0)] = 1
     
     # remove nan values
-    multi_models[idx_unprece] = np.nan
+    # multi_models[idx_unprece] = np.nan
     
     # multi model mean (disregarding nan values) and percentage of models predicting an increase in co-occurence
     crops_shapefile['mean_incre'] = np.nanmean(multi_models, axis=1)
@@ -440,17 +374,17 @@ def compute_f_mean(path):
     crops_shapefile['%M_ampli'] = percen_m_increase
     
     # save percentage of models predicting unprecedented hot-hot extremes
-    crops_shapefile['%M_unpre'] = perc_unprece
+    # crops_shapefile['%M_unpre'] = perc_unprece
     
     crops_shapefile.to_file(new_file2)
     
 
 def fct_mean_per_county(ds, model, var_name, crops_shapefile):
     ds_out = regrid_cmip6(ds, model, var_name)
-    gdf = create_gdf(ds_out, var_name)            
+    gdf = create_gdf_from_ds(ds_out, var_name)            
     points_polys = gpd.sjoin(gdf, crops_shapefile, how="left")
-    stats_pt = points_polys.groupby('index_right')[0].agg(['mean'])
-    result = pd.merge(crops_shapefile, stats_pt , left_index=True, right_index=True,how='outer')
+    stats_pt = points_polys.groupby('index_right')[0].agg(['mean']) #nanmean
+    result = pd.merge(crops_shapefile, stats_pt , left_index=True, right_index=True, how='outer')
     mean_per_county = np.asarray(result['mean'].values)
     
     return mean_per_county
@@ -489,13 +423,26 @@ def regrid_cmip6(ds, model, var_name):
     
     return ds_out
 
-def create_gdf(ds, var_name):
+def create_gdf_from_ds(ds, var_name):
     lon1, lat1 = np.meshgrid(ds.lon.values, ds.lat.values)
     geometry = gpd.points_from_xy(lon1.flatten(), lat1.flatten())
     gdf = gpd.GeoDataFrame(ds[var_name].values.flatten(), crs="EPSG:4326", geometry=geometry)
     
-    
     return gdf
+
+
+def create_ds_2D(lat, lon, dict_var, file_path):
+    ds_output = xr.Dataset(data_vars=dict_var, coords=dict(                           
+                                    lat=(["lat"], lat),
+                                    lon=(["lon"], lon),
+                                    )    
+                            )
+    
+    Path(os.path.dirname(file_path)).mkdir(parents=True, exist_ok=True)
+    
+    ds_output.to_netcdf(file_path)
+    ds_output.close()
+    
 
 # """Compute mean per time period and grid cell for historic and future time period"""
 # # future
@@ -519,17 +466,17 @@ def create_gdf(ds, var_name):
 
 """Compute value for each county"""
 path_difference = '/Users/carmenst/Documents/Polybox/WCR/Conferences_summerschools/2022_10_Como/Project/Sequential_heat_crops/Data/Climate/CMIP6/future-historic/output/**/*' 
-# # crops_shapefile = compute_mean_per_county(path_difference)
-# # crops_shapefile.to_file('counties_multi_model_mean.shp')
+# # # crops_shapefile = compute_mean_per_county(path_difference)
+# # # crops_shapefile.to_file('counties_multi_model_mean.shp')
 crops_shapefile = compute_diff_per_model(path_difference)
 crops_shapefile.to_file('counties_difference_per_model.shp')
 
-#compute exceedances of thr
-path_historic = '/Users/carmenst/Documents/Polybox/WCR/Conferences_summerschools/2022_10_Como/Project/Sequential_heat_crops/Data/Climate/CMIP6/historic/input/**/*' 
-nr_years = 40
-percentiles = [50, 75]
-references = ['historic', 'future']
-ssps= ['ssp245', 'ssp370']
+# #compute exceedances of thr
+# path_historic = '/Users/carmenst/Documents/Polybox/WCR/Conferences_summerschools/2022_10_Como/Project/Sequential_heat_crops/Data/Climate/CMIP6/historic/input/**/*' 
+# nr_years = 40
+# percentiles = [50, 75]
+# references = ['historic', 'future']
+# ssps= ['ssp245', 'ssp370']
 
 # us_shp_file = '/Users/carmenst/Documents/Polybox/WCR/Conferences_summerschools/2022_10_Como/Project/Sequential_heat_crops/Data/shapefiles/input/gadm36_USA_2.shp'
 # shp_US = gpd.read_file(us_shp_file)
@@ -559,12 +506,19 @@ ssps= ['ssp245', 'ssp370']
 #                 reference_str+percentile_str +'/frequency increase/'+ssp)
 #             compute_f_mean(path)
 
-
-# # import geopandas as gpd
-# us_shp_file ='/Users/carmenst/Documents/Polybox/WCR/Conferences_summerschools/2022_10_Como/Project/Sequential_heat_crops/Data/shapefiles/output/2023_05_T_diff/counties_difference_per_model.shp'
-us_shp_file ='/Users/carmenst/Documents/Polybox/WCR/Conferences_summerschools/2022_10_Como/Project/Sequential_heat_crops/Data/Climate/CMIP6/frequencies/result/f_change_relative_ssp245_reference_historic_percentile_50.shp'
+import numpy as np
+import geopandas as gpd
+import matplotlib.pyplot as plt
+import cartopy.crs as ccrs
+us_shp_file ='/Users/carmenst/Documents/Polybox/WCR/Conferences_summerschools/2022_10_Como/Project/Sequential_heat_crops/Data/shapefiles/output/2023_06_T_diff/counties_difference_per_model.shp'
+# us_shp_file ='/Users/carmenst/Documents/Polybox/WCR/Conferences_summerschools/2022_10_Como/Project/Sequential_heat_crops/Data/shapefiles/output/2023_06_f_change/f_change_relative_ssp245_reference_historic_percentile_75.shp'
 shp_US = gpd.read_file(us_shp_file)
+ 
+
+# shp_US.plot(column='mean_incre', cmap ='seismic' ,legend=True, vmin=-10, vmax=10)
 
 
 # missing_kwds = dict(color='grey', label='No Data')
-# result.plot(column = 'mean', missing_kwds=missing_kwds)
+# shp_US.plot(column = '245_su_M0', missing_kwds=missing_kwds)
+
+# shp_US.plot(column = 'mean_incre')
