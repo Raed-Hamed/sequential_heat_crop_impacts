@@ -55,39 +55,47 @@ def compute_difference(path_future_output):
     # multi_model_diff = np.empty((nr_runs, size[0], size[1]))
     
     for idx_file, fut_file in enumerate(file_list):
-        his_file0 = fut_file.replace("future", "historic")
-        his_file1 = his_file0.replace("ssp245/", "")
-        his_file2 = his_file1.replace("ssp370/", "")
-        
-        directory0, directory1, directory2, directory3, directory4, str1, str2, str3, _ , _, _  = his_file2.split('_')
-        
-        his_file = directory0+'_'+directory1+'_'+directory2+ '_'+directory3+'_'+directory4+'_'+str1+'_'+str2+'_'+str3+'_'+'hist_r1i1p1f1_mean.nc'
-        
-        ds_mean_fut = xr.open_dataset(fut_file)
-        ds_mean_his = xr.open_dataset(his_file)
-        
-        mean_fut = ds_mean_fut.tmax_mean.values
-        mean_his = ds_mean_his.tmax_mean.values
-        
-        difference = mean_fut-mean_his
-        
-        
-        ds_output = xr.Dataset(data_vars=dict(diff=(["lat", "lon"], difference),
-                                       ),
-                               coords=dict(                           
-                                       lat=(["lat"], ds_mean_fut.lat.values),
-                                       lon=(["lon"], ds_mean_fut.lon.values),
-                                       )    
-                               )
-        
-        ds_output.attrs = ds_mean_his.attrs
         
         new_filename = fut_file.replace("future", "future-historic")
-        new_filename = new_filename.replace("mean", "difference")
-        Path(os.path.dirname(new_filename)).mkdir(parents=True, exist_ok=True)
+        new_filename1 = new_filename.replace("mean", "difference")
         
-        ds_output.to_netcdf(new_filename)
-        ds_output.close()
+        if not os.path.isfile(new_filename1):
+            Path(os.path.dirname(new_filename)).mkdir(parents=True, exist_ok=True)
+        
+            his_file0 = fut_file.replace("future", "historic")
+            his_file1 = his_file0.replace("ssp245/", "")
+            his_file2 = his_file1.replace("ssp370/", "")
+            his_file3 = his_file2.replace("ssp119/", "")
+            his_file4 = his_file3.replace("ssp126/", "")
+            
+    
+            
+            directory0, directory1, directory2, directory3, directory4, str1, str2, str3, _ , _, _  = his_file4.split('_')
+            
+            his_file = directory0+'_'+directory1+'_'+directory2+ '_'+directory3+'_'+directory4+'_'+str1+'_'+str2+'_'+str3+'_'+'hist_r1i1p1f1_mean.nc'
+            
+            ds_mean_fut = xr.open_dataset(fut_file)
+            ds_mean_his = xr.open_dataset(his_file)
+            
+            mean_fut = ds_mean_fut.tmax_mean.values
+            mean_his = ds_mean_his.tmax_mean.values
+            
+            difference = mean_fut-mean_his
+            
+            
+            ds_output = xr.Dataset(data_vars=dict(diff=(["lat", "lon"], difference),
+                                           ),
+                                   coords=dict(                           
+                                           lat=(["lat"], ds_mean_fut.lat.values),
+                                           lon=(["lon"], ds_mean_fut.lon.values),
+                                           )    
+                                   )
+            
+            ds_output.attrs = ds_mean_his.attrs
+            
+    
+            ds_output.to_netcdf(new_filename)
+            ds_output.close()
         
         # multi_model_diff[idx_file, :, :] = 
         
@@ -134,7 +142,7 @@ def compute_diff_per_model(path_input):
     us_shp_file = '/Users/carmenst/Documents/Polybox/WCR/Conferences_summerschools/2022_10_Como/Project/Sequential_heat_crops/Data/shapefiles/input/gadm36_USA_2.shp'
     crops_shapefile = gpd.read_file(us_shp_file)
     
-    dir_list = [f for f in iglob(path_input, recursive=True) if os.path.isdir(f)][2:]
+    dir_list = [f for f in iglob(path_input+'/**/*', recursive=True) if os.path.isdir(f)]
     
     for directory in dir_list:
         file_list = [f for f in iglob(directory+'/*', recursive=True) if os.path.isfile(f)]
@@ -444,10 +452,9 @@ def create_ds_2D(lat, lon, dict_var, file_path):
     ds_output.close()
     
 
-# """Compute mean per time period and grid cell for historic and future time period"""
+"""Compute mean per time period and grid cell for historic and future time period"""
 # # future
-# path_future = '/Users/carmenst/Documents/CLIMADA/own_projects/sequential_heat_crop_impacts/CMIP6_DATA/future/input/**/*' 
-# # '/Users/carmenst/Documents/CLIMADA/own_projects/sequential_heat_crop_impacts/CMIP6_DATA/output'
+# path_future = '/Users/carmenst/Documents/Polybox/WCR/Conferences_summerschools/2022_10_Como/Project/Sequential_heat_crops/Data/Climate/CMIP6/future/input/**/*' 
 # nr_years = 40
 # create_mean(path_future, nr_years, "2015-2100")
 
@@ -459,8 +466,8 @@ def create_ds_2D(lat, lon, dict_var, file_path):
 # create_mean(path_historic, nr_years, "1961-2014")
 
 
-# """Compute multi model mean"""
-# path_future_output = '/Users/carmenst/Documents/CLIMADA/own_projects/sequential_heat_crop_impacts/CMIP6_DATA/future/output/**/*' 
+# # """Compute multi model mean"""
+# path_future_output = '/Users/carmenst/Documents/Polybox/WCR/Conferences_summerschools/2022_10_Como/Project/Sequential_heat_crops/Data/Climate/CMIP6/future/output/**/*' 
 # compute_difference(path_future_output)
 
 
@@ -471,52 +478,64 @@ path_difference = '/Users/carmenst/Documents/Polybox/WCR/Conferences_summerschoo
 crops_shapefile = compute_diff_per_model(path_difference)
 crops_shapefile.to_file('counties_difference_per_model.shp')
 
-# #compute exceedances of thr
-# path_historic = '/Users/carmenst/Documents/Polybox/WCR/Conferences_summerschools/2022_10_Como/Project/Sequential_heat_crops/Data/Climate/CMIP6/historic/input/**/*' 
-# nr_years = 40
-# percentiles = [50, 75]
-# references = ['historic', 'future']
-# ssps= ['ssp245', 'ssp370']
+#compute exceedances of thr
+path_historic = '/Users/carmenst/Documents/Polybox/WCR/Conferences_summerschools/2022_10_Como/Project/Sequential_heat_crops/Data/Climate/CMIP6/historic/input/**/*' 
+nr_years = 40
+percentiles = [50, 75]
+references = ['historic', 'future']
+#ssps= ['ssp245', 'ssp370']
+ssps= ['ssp119', 'ssp126']
 
-# us_shp_file = '/Users/carmenst/Documents/Polybox/WCR/Conferences_summerschools/2022_10_Como/Project/Sequential_heat_crops/Data/shapefiles/input/gadm36_USA_2.shp'
-# shp_US = gpd.read_file(us_shp_file)
-
-
-# for percentile in percentiles: 
-#     percentile_str = '/percentile_'+str(percentile)
-#     for reference in references:
-#         reference_str = '/reference_'+reference
-        
-# #         # # frequency
-# #         # compute_frequency(path_historic, nr_years, percentile, reference, ssps)
-        
-# #         # # frequency change
-# #         # path_scenario = '/Users/carmenst/Documents/Polybox/WCR/Conferences_summerschools/2022_10_Como/Project/Sequential_heat_crops/Data/Climate/CMIP6/frequencies' +(
-# #         #     reference_str+ percentile_str +'/exceedances')
-# #         # compute_frequency_change(path_scenario)
-        
-#         for ssp in ssps:
-# #             # occurence of hot-hot events in the past and future
-# #             # path_cooccurrence = '/Users/carmenst/Documents/Polybox/WCR/Conferences_summerschools/2022_10_Como/Project/Sequential_heat_crops/Data/Climate/CMIP6/frequencies' + (
-# #             #     reference_str+ percentile_str +'/frequency')
-# #             # comparison_fut_his(path_cooccurrence, ssp)
-            
-#             # compare changes in co-occurence
-#             path = '/Users/carmenst/Documents/Polybox/WCR/Conferences_summerschools/2022_10_Como/Project/Sequential_heat_crops/Data/Climate/CMIP6/frequencies'+(
-#                 reference_str+percentile_str +'/frequency increase/'+ssp)
-#             compute_f_mean(path)
-
-import numpy as np
-import geopandas as gpd
-import matplotlib.pyplot as plt
-import cartopy.crs as ccrs
-us_shp_file ='/Users/carmenst/Documents/Polybox/WCR/Conferences_summerschools/2022_10_Como/Project/Sequential_heat_crops/Data/shapefiles/output/2023_06_T_diff/counties_difference_per_model.shp'
-# us_shp_file ='/Users/carmenst/Documents/Polybox/WCR/Conferences_summerschools/2022_10_Como/Project/Sequential_heat_crops/Data/shapefiles/output/2023_06_f_change/f_change_relative_ssp245_reference_historic_percentile_75.shp'
+us_shp_file = '/Users/carmenst/Documents/Polybox/WCR/Conferences_summerschools/2022_10_Como/Project/Sequential_heat_crops/Data/shapefiles/input/gadm36_USA_2.shp'
 shp_US = gpd.read_file(us_shp_file)
+
+
+for percentile in percentiles: 
+    percentile_str = '/percentile_'+str(percentile)
+    for reference in references:
+        reference_str = '/reference_'+reference
+        
+        # frequency
+        compute_frequency(path_historic, nr_years, percentile, reference, ssps)
+        
+        # frequency change
+        path_scenario = '/Users/carmenst/Documents/Polybox/WCR/Conferences_summerschools/2022_10_Como/Project/Sequential_heat_crops/Data/Climate/CMIP6/frequencies' +(
+            reference_str+ percentile_str +'/exceedances')
+        compute_frequency_change(path_scenario)
+        
+        for ssp in ssps:
+            # occurence of hot-hot events in the past and future
+            path_cooccurrence = '/Users/carmenst/Documents/Polybox/WCR/Conferences_summerschools/2022_10_Como/Project/Sequential_heat_crops/Data/Climate/CMIP6/frequencies' + (
+                reference_str+ percentile_str +'/frequency')
+            comparison_fut_his(path_cooccurrence, ssp)
+            
+            # compare changes in co-occurence
+            path = '/Users/carmenst/Documents/Polybox/WCR/Conferences_summerschools/2022_10_Como/Project/Sequential_heat_crops/Data/Climate/CMIP6/frequencies'+(
+                reference_str+percentile_str +'/frequency increase/'+ssp)
+            compute_f_mean(path)
+
+# import numpy as np
+# import geopandas as gpd
+# import matplotlib.pyplot as plt
+# import cartopy.crs as ccrs
+# import copy
+# # us_shp_file ='/Users/carmenst/Documents/Polybox/WCR/Conferences_summerschools/2022_10_Como/Project/Sequential_heat_crops/Data/shapefiles/output/2023_06_T_diff/counties_difference_per_model.shp'
+
+# scenario = 'f_change_relative_ssp370_reference_historic_percentile_50.shp'
+# us_shp_file ='/Users/carmenst/Documents/Polybox/WCR/Conferences_summerschools/2022_10_Como/Project/Sequential_heat_crops/Data/shapefiles/output/2023_06_f_change/'+scenario
+# shp_US = gpd.read_file(us_shp_file)
  
 
-# shp_US.plot(column='mean_incre', cmap ='seismic' ,legend=True, vmin=-10, vmax=10)
+# shp_US.plot(column='%M_incre', cmap ='seismic' ,legend=True, vmin=0, vmax=1)
 
+# mean = shp_US['mean_incre'].values
+# perc_increase = shp_US['%M_incre'].values
+# idx_decrease  = np.where(mean <= 0)
+# percentage_agreement =  copy.deepcopy(perc_increase)
+# percentage_agreement[idx_decrease] = 1-perc_increase[idx_decrease]
+# shp_US['%M_agree'] = percentage_agreement
+# shp_US.plot(column='%M_agree', cmap ='seismic' ,legend=True, vmin=0, vmax=1)
+# shp_US.to_file('/Users/carmenst/Desktop/'+scenario)
 
 # missing_kwds = dict(color='grey', label='No Data')
 # shp_US.plot(column = '245_su_M0', missing_kwds=missing_kwds)
