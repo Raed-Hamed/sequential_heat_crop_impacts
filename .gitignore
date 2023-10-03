@@ -1,5 +1,8 @@
 .Rproj.user
 .Rhistory
 .RData
+.excessive_moisture_test_branch
 .Ruserdata
 data/
+old/
+figures/

@@ -10,7 +10,6 @@ gc()
 library(tidyverse)
 library(sf)
 library(raster)
-library(USAboundaries)
 library(colorspace)
 library(furrr)
 #======================================================================
@@ -28,16 +27,23 @@ source("load_functions.R")
 no_cores <- availableCores() - 1
 plan(multisession, workers = no_cores)
 #======================================================================
-#prepare shapefiles for quick raster processing
+#prepare shape files for quick raster processing
 #======================================================================
-shp_wheat <-  list.files(dir_model,"global_wheat_dtr_sf.rds", full.names = TRUE) %>% 
+shp_corn <-  list.files(dir_model,"us_corn_dtr_sf.rds", full.names = TRUE) %>% 
   read_rds() %>% 
   dplyr::select(geometry,zone) %>% 
   tibble() %>% 
   distinct() %>% 
   st_as_sf()
 
-shp_corn <-  list.files(dir_model,"global_wheat_dtr_sf.rds", full.names = TRUE) %>% 
+shp_soy<-  list.files(dir_model,"us_soy_dtr_sf.rds", full.names = TRUE) %>% 
+  read_rds() %>% 
+  dplyr::select(geometry,zone) %>% 
+  tibble() %>% 
+  distinct() %>% 
+  st_as_sf()
+
+shp_wheat<-  list.files(dir_model,"global_wheat_dtr_sf", full.names = TRUE) %>% 
   read_rds() %>% 
   dplyr::select(geometry,zone) %>% 
   tibble() %>% 
@@ -49,34 +55,14 @@ shp_corn <-  list.files(dir_model,"global_wheat_dtr_sf.rds", full.names = TRUE) 
 select_vars <- c("mean_sm_spring",
                  "mean_sm_summer",
                  "mean_tmax_spring",
-                 "mean_tmax_summer",
-                 "gdd_spring",
-                 "kdd_spring",
-                 "gdd_summer",
-                 "kdd_summer")
+                 "mean_tmax_summer")
 #======================================================================
-#get clean climate arranged in dataframe (approx . 35 sec)
-climate_data_wheat <-  select_vars %>%
-  future_map_dfr(
-    .,
-    ~ load_cpc_t(
-      filename = "wheat_kdd_gdd_tmax_sm",
-      varname = .x,
-      shapefile = shp_wheat
-    ) %>%
-      mutate(var_name = .x)
-  ) %>%
-  pivot_wider(names_from = var_name, values_from = value)
-
-#save processed climate dataframe
-saveRDS(climate_data_wheat, file.path(dir_model,"climate_sf_wheat.rds"))
-#======================================================================
-#get clean climate arranged in dataframe (approx . 35 sec)
+#get clean climate arranged in a data frame (approx . 35 sec)
 climate_data_corn <-  select_vars %>%
   future_map_dfr(
     .,
     ~ load_cpc_t(
-      filename = "maize_kdd_gdd_tmax_sm",
+      filename = "maize_AM_JA",
       varname = .x,
       shapefile = shp_corn
     ) %>%
@@ -84,6 +70,37 @@ climate_data_corn <-  select_vars %>%
   ) %>%
   pivot_wider(names_from = var_name, values_from = value)
 
-#save processed climate dataframe
-saveRDS(climate_data_corn, file.path(dir_model,"climate_sf_maize.rds"))
+#save processed climate data frame
+saveRDS(climate_data_corn, file.path(dir_model,"climate_sf_corn.rds"))
+#======================================================================
+#get clean climate arranged in a data frame (approx . 35 sec)
+climate_data_soy <-  select_vars %>%
+  future_map_dfr(
+    .,
+    ~ load_cpc_t(
+      filename = "soy_AM_JA",
+      varname = .x,
+      shapefile = shp_soy
+    ) %>%
+      mutate(var_name = .x)
+  ) %>%
+  pivot_wider(names_from = var_name, values_from = value)
 
+#save processed climate data frame
+saveRDS(climate_data_soy, file.path(dir_model,"climate_sf_soy.rds"))
+#======================================================================
+#get clean climate arranged in a data frame (approx . 35 sec)
+climate_data_wheat <-  select_vars %>%
+  future_map_dfr(
+    .,
+    ~ load_cpc_t(
+      filename = "wheat_MA_JJ",
+      varname = .x,
+      shapefile = shp_wheat
+    ) %>%
+      mutate(var_name = .x)
+  ) %>%
+  pivot_wider(names_from = var_name, values_from = value)
+
+#save processed climate data frame
+saveRDS(climate_data_wheat, file.path(dir_model,"climate_sf_wheat.rds"))
