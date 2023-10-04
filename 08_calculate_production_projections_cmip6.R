@@ -20,8 +20,10 @@ source("00_load_functions.R")
 #======================================================================
 root_dir <- getwd()
 dir_usda <- file.path(root_dir, "data/usda-nass")
+dir_shp <- file.path(root_dir, "data/shapefiles")
 dir_model <- file.path(root_dir, "data/model_data")
 dir_cmip6 <- file.path(root_dir, "data/cmip6/")  
+dir_figures <- file.path(root_dir, "figures")
 #======================================================================
 #load helper function
 #======================================================================
@@ -49,28 +51,6 @@ calc_yield_predictions <- function(data) {
   
   return(data)
 }
-#----------------------------------------------------------------------
-#load summary bootstrap coefficients
-load_summary_boot_coef_data <- function(filename) {
-  coef_summary <-
-    list.files(dir_model,
-               filename ,
-               full.names = TRUE) %>%
-    readRDS()  %>%
-    drop_na() %>%
-    group_by(group_id, coef) %>%
-    summarise(
-      mean = mean(value),
-      median = median(value),
-      percentile_5th = quantile(value, 0.05),
-      percentile_95th = quantile(value, 0.95)
-    ) %>%
-    mutate(significant = as.integer(sign(percentile_5th) == sign(percentile_95th))) %>%
-    separate(group_id, c("State", "County"), sep = "_")
-  
-  return(coef_summary)
-  
-}
 #======================================================================
 #load spatial info
 #======================================================================
@@ -89,14 +69,6 @@ us_state_shp <- list.files(dir_shp, ".json", full.names = TRUE) %>%
   map_dfr(st_read) %>%
   mutate(NAME_1  = NAME_1 %>%  str_to_upper) %>%
   filter(!NAME_1 %in%  c("ALASKA", "HAWAII"))
-#----------------------------------------------------------------------
-#state spatial info EU
-eu_state_shp <-
-  list.files(dir_shp, "NUTS_RG_20M_2021_3035.shp", full.names = TRUE) %>%
-  st_read() %>%
-  filter(LEVL_CODE == 2) %>%
-  st_transform(., crs = st_crs("+proj=longlat +datum=WGS84 +no_defs")) %>%
-  filter(CNTR_CODE %in% spatial_info$State)
 #======================================================================
 #load harvested data
 #======================================================================
@@ -188,120 +160,12 @@ rm(
 #======================================================================
 #load crop yield projections
 #======================================================================
-#load bootstrap yield predictions
-yield_ci_boot <- map_dfr(list.files(dir_model,
-                                    "prediction_" ,
-                                    full.names = TRUE),
-                         ~ {
-                           data <- readRDS(.x)
-                           data$id <-
-                             basename(.x)  %>% file_path_sans_ext
-                           data
-                         }) %>%
-  pivot_longer(-c(group_id,id)) %>%
-  drop_na() %>% 
-  group_by(group_id, id) %>%
-  summarise(
-    mean = mean(value),
-    median = median(value),
-    percentile_5th = quantile(value, 0.05),
-    percentile_95th = quantile(value, 0.95)
-  )  %>%
-  ungroup() %>%
-  separate(
-    id,
-    into = c("type", "crop", "ssp"),
-    sep = "_",
-    extra = "drop"
-  ) %>%
-  separate(group_id,
-           into = c("State", "County"),
-           sep = "_")
-#-------------------------------------------------------------------------------
-#compute bootstrap production CIs
-production_ci_boot <-yield_ci_boot %>%
-  inner_join(harvested_are_2010_2021) %>%
-  pivot_longer(mean:percentile_95th,
-               names_to = "CI_level",
-               values_to = "yield_anomaly") %>% 
-  mutate(production_anomaly = Value * yield_anomaly) %>%
-  distinct() %>% 
-  group_by(type,crop,ssp,CI_level) %>%
-  summarise_at(
-    vars(
-      production_anomaly,
-      Value
-    ),
-    sum
-  )
-#-------------------------------------------------------------------------------
-#compute relative CI bootstrap predictions
-relative_production_ci <-production_ci_boot %>% 
-  mutate(production_prct_change = production_anomaly/Value*100)
-#-------------------------------------------------------------------------------
-#keep memory storage low
-rm(yield_ci_boot)
-gc()
-#======================================================================
-#load CMIP6 data
-#======================================================================
-#load TX delta changes
-cmip6_tx_delta_change_per_model <-
-  list.files(dir_cmip6,
-             "counties_difference_per_model.shp",
-             full.names = TRUE) %>%
-  read_sf() %>%
-  tibble() %>%
-  dplyr::select(-geometry) %>% 
-  pivot_longer("X245_su_M0":"X119_sp_mea") %>%
-  dplyr::select(NAME_0,NAME_1,NAME_2,name,value) %>% 
-  separate(name, c("model_scenario", "season","model_ref")) %>%
-  mutate(across('season', str_replace, 'su', 'delta_summer_tx')) %>%
-  mutate(across('season', str_replace, 'sp', 'delta_spring_tx')) %>%
-  filter(!NAME_1  %in% c("Alaska", "Hawaii"))%>%
-  mutate_at(vars(NAME_1, NAME_2), str_to_upper) %>% 
-  pivot_wider(names_from = season, values_from = value) %>% 
-  unite("group_id",NAME_1 :NAME_2) %>% 
-  mutate(delta_spring_sm = 0,
-         delta_summer_sm= 0)
-#======================================================================
-#load bootstrap coefficient summary per crop incl. CIs (Tx in degree C)
-#======================================================================
-#load coefficient bootstrap for corn model
-boot_corn_model <-
-  load_summary_boot_coef_data("coef_ci_corn.rds")
-#----------------------------------------------------------------------
-#load coefficient bootstrap for soy model
-boot_soy_model <- load_summary_boot_coef_data("coef_ci_soy.rds")
-#----------------------------------------------------------------------
-#process bootstrap corn coefficients
-boot_corn_coefs <-boot_corn_model %>% 
-  dplyr::select(State,County,coef,mean) %>% 
-  pivot_wider(names_from = coef, values_from = mean)  %>%
-  mutate(crop = "corn")
-#----------------------------------------------------------------------
-#process bootstrap corn coefficients
-boot_soy_coefs <-boot_soy_model %>% 
-  dplyr::select(State,County,coef,mean) %>% 
-  pivot_wider(names_from = coef, values_from = mean)  %>%
-  mutate(crop = "soy")
-#----------------------------------------------------------------------
-boot_coefs <-bind_rows(boot_corn_coefs,boot_soy_coefs) %>% 
-  unite(group_id, c("State","County"))
-#======================================================================
-#calculate yield projections per temperature driver (tx predictor)
-#======================================================================
 #calculate soy yield projections
 calc_yield_predictions_df <-
-  inner_join(cmip6_tx_delta_change_per_model,
-             boot_coefs) %>%
-  dplyr::select(-NAME_0) %>% 
-  group_by(model_scenario, model_ref, group_id,crop) %>%
-  nest() %>%
-  summarise(data = map(data, calc_yield_predictions)) %>%
-  unnest(data)  %>%
-  ungroup() %>%
-  distinct() 
+  list.files(dir_cmip6,
+             "crop_yield_projections.rds" ,
+             full.names = TRUE) %>%
+  readRDS() 
 #----------------------------------------------------------------------
 #transform yield projections into production anomalies
 crop_production_anomaly <- calc_yield_predictions_df %>%
@@ -349,21 +213,19 @@ crop_production_anomaly <- calc_yield_predictions_df %>%
   mutate(name  = factor(
     name ,
     labels = c(
-      "Spring Temperature",
-      "Summer Temperature",
-      "Spring-Summer interaction",
+      "Spring temperature",
+      "Summer temperature",
+      "Spring-Summer temperature interaction",
       "Total"
     )
-  )) %>% 
-  filter(crop == "soy") 
-
+  ))
 #======================================================================
 #load CMIP6 frequency changes from future minus historic period (to simplify)!
 #======================================================================
 #load tx frequency changes
 cmip6_tx_freq_change <-
-  fs::dir_ls(dir_cmip6_frequency_change,
-             regexp = ".shp$") %>%
+  fs::dir_ls(dir_cmip6,
+             regexp = "_75.shp$") %>%
   map_dfr(read_sf, .id = "source") %>%
   tibble()  %>%
   filter(!NAME_1  %in% c("Alaska", "Hawaii")) %>% 
@@ -381,12 +243,14 @@ cmip6_tx_freq_change <-
   ) %>%
   dplyr::select(-c(to_remove, to_remove1, to_remove2))
 #----------------------------------------------------------------------
+#average frequency changes over soybean harvested area using local weights
 soy_harvest_area_freq_change <- cmip6_tx_freq_change %>%
   filter(percentile == 75) %>%
   mutate(State = NAME_1 %>%  str_to_upper()) %>%
   mutate(County = NAME_2 %>%  str_to_upper()) %>%
-  inner_join(usda_soy_harvested_area) %>%
-  dplyr::select(-geometry,-X.M_incre,-X.M_ampli) %>%
+  inner_join(harvested_are_2010_2021 %>%
+               filter(crop == "soy")) %>%
+  dplyr::select(-geometry, -X.M_incre, -X.M_ampli) %>%
   pivot_longer(M_0:M_23) %>%
   dplyr::select(model_scenario,
                 reference,
@@ -396,7 +260,7 @@ soy_harvest_area_freq_change <- cmip6_tx_freq_change %>%
                 weighted_harvest_area,
                 name,
                 value) %>%
-  drop_na() %>% 
+  drop_na() %>%
   group_by(model_scenario, reference, name) %>%
   nest() %>%
   mutate(weighted_val = map(data, ~ weighted.mean(.$value, .$weighted_harvest_area))) %>%
@@ -405,11 +269,13 @@ soy_harvest_area_freq_change <- cmip6_tx_freq_change %>%
   ungroup() %>%
   mutate(crop = "Soybean")
 #----------------------------------------------------------------------
+#average frequency changes over maize harvested area using local weights
 maize_harvest_area_freq_change <-cmip6_tx_freq_change %>%
   filter(percentile == 75) %>%
   mutate(State = NAME_1 %>%  str_to_upper()) %>%
   mutate(County = NAME_2 %>%  str_to_upper()) %>%
-  inner_join(usda_maize_harvested_area) %>%
+  inner_join(harvested_are_2010_2021 %>%
+               filter(crop == "corn")) %>%
   dplyr::select(-geometry,-X.M_incre,-X.M_ampli) %>%
   pivot_longer(M_0:M_23) %>%
   dplyr::select(model_scenario,
@@ -482,32 +348,33 @@ fi4a <-bind_rows(soy_harvest_area_freq_change,
       color = crop,
       group = crop
     ),
-    size = 4,
+    size = 6,
     position = position_dodge(width = 0.5)
   ) +
   ggtitle(label = "a) Change in hot-hot event frequency")+
-  theme_bw(base_size = 20) +
+  theme_bw(base_size = 25) +
   theme(
     panel.grid = element_blank(),
     legend.position = c(0.8, 0.2),
     legend.background = element_rect(fill = alpha("white", 0)),
-    plot.title = element_text(size = 20),
-    legend.text = element_text(size = 20),
+    plot.title = element_text(size = 25),
+    legend.text = element_text(size = 25),
     legend.title = element_blank(),
-    axis.title.y = element_text(size = 20),
-    strip.text.x = element_text(size = 20),
+    axis.title.y = element_text(size = 25),
+    strip.text.x = element_text(size = 25),
     legend.margin = margin(0),
-    axis.text.y = element_text(size = 16),
-    axis.text.x = element_text(angle = 0, vjust = 0.5,size = 20),
+    axis.text.y = element_text(size = 25),
+    axis.text.x = element_text(angle = 0, vjust = 0.5,size = 25),
     legend.spacing = unit(0, "cm")
   )+
   xlab("") +
   ylab("Frequency change in sequential spring-summer hot events (%)")
 #----------------------------------------------------------------------
-#plot impact projections
+#plot soybean impact projections
 fi4b <-ggplot() +
   geom_bar(
     data = crop_production_anomaly %>%
+      filter(crop == "soy") %>% 
       filter(model_ref == "mea"),
     aes(
       x = model_scenario,
@@ -519,7 +386,8 @@ fi4b <-ggplot() +
     position = "dodge"
   ) +
   geom_errorbar(
-    data = crop_production_anomaly %>% 
+    data = crop_production_anomaly %>%
+      filter(crop == "soy") %>% 
       filter(model_ref != "mea") %>% 
       group_by(model_scenario,name,crop) %>% 
       mutate(lwr = quantile(production_anomaly,0.05),
@@ -537,26 +405,85 @@ fi4b <-ggplot() +
   scale_fill_manual("", values = c("aquamarine4", "tan3", "darkgoldenrod1", "darkred")) +
   theme(
     panel.grid = element_blank(),
-    legend.position = c(0.25, 0.20),
+    legend.position="none",
+    #legend.position = c(0.25, 0.20),
     legend.background = element_rect(fill = alpha("white", 0)),
-    plot.title = element_text(size = 20),
-    legend.text = element_text(size = 20),
+    plot.title = element_text(size = 25),
+    legend.text = element_text(size = 25),
     legend.title = element_blank(),
-    axis.title.y = element_text(size = 20),
-    strip.text.x = element_text(size = 20),
+    axis.title.y = element_text(size = 25),
+    strip.text.x = element_text(size = 25),
     legend.margin = margin(0),
-    axis.text.y = element_text(size = 16),
-    axis.text.x = element_text(angle = 0, vjust = 0.5,size = 20),
+    axis.text.y = element_text(size = 25),
+    axis.text.x = element_text(angle = 0, vjust = 0.5,size = 25),
+    legend.spacing = unit(0, "cm")
+  )+
+  xlab("")+
+  #ylab("Percentage of recent total production (2010-2021)") +
+  ylab("") +
+  geom_hline(yintercept = 0, size = 1) 
+#----------------------------------------------------------------------
+fig4c <-ggplot() +
+  geom_bar(
+    data = crop_production_anomaly %>%
+      filter(crop == "corn") %>%
+      filter(model_ref == "mea"),
+    aes(
+      x = model_scenario,
+      y = production_anomaly,
+      fill = name,
+      group = name
+    ),
+    stat = "identity",
+    position = "dodge"
+  ) +
+  geom_errorbar(
+    data = crop_production_anomaly %>% 
+      filter(crop == "corn") %>%
+      filter(model_ref != "mea") %>% 
+      group_by(model_scenario,name,crop) %>% 
+      mutate(lwr = quantile(production_anomaly,0.05),
+             upr = quantile(production_anomaly,0.95)),
+    aes(x = model_scenario,
+        group = name,
+        ymin = lwr,
+        ymax = upr),
+    width = 0.1,
+    position = position_dodge(width = 0.9)
+  ) +
+  geom_hline(yintercept = 0)+
+  theme_bw() +
+  ggtitle(label = "c) Total production of maize in the US")+
+  scale_fill_manual("", values = c("aquamarine4", "tan3", "darkgoldenrod1", "darkred")) +
+  theme(
+    panel.grid = element_blank(),
+    legend.position = c(0.45, 0.20),
+    legend.background = element_rect(fill = alpha("white", 0)),
+    plot.title = element_text(size = 25),
+    legend.text = element_text(size = 25),
+    legend.title = element_blank(),
+    axis.title.y = element_text(size = 25, hjust = -0.35),
+    strip.text.x = element_text(size = 25),
+    legend.margin = margin(0),
+    axis.text.y = element_text(size = 25),
+    axis.text.x = element_text(angle = 0, vjust = 0.5,size = 25),
     legend.spacing = unit(0, "cm")
   )+
   xlab("")+
   ylab("Percentage of recent total production (2010-2021)") +
   geom_hline(yintercept = 0, size = 1) 
-
 #----------------------------------------------------------------------
 #join the two panels and generate final figure
-fig4 <-fi4a +fi4b
-pdf("fig4.pdf",height=10,width=20)
+fig4 <-fi4a + (fi4b/fig4c)
+
+png(
+  file.path(dir_figures, "tx_frequency_and_impact_change.png"),
+  width = 20,
+  height = 12,
+  units = 'in',
+  res = 300
+)
+
 print(fig4)
 dev.off()
 
