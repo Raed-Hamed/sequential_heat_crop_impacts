@@ -2,56 +2,5 @@
 # Code to reproduce sequential heat crop paper
 # Contact person: Raed Hamed (raed.hamed@vu.nl)
 
-Run scripts sequentially following the numbering as 
-scripts build on previous computed outputs
-:::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-> Load_functions:
-Contains general helper functions to support code processing
-:::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-> Load_crop_data:
-Process USDA sourced crop yield datasets for soy and maize.
-Linear data detrend per county
-Add spatial dimension to csv files
-Save output as sf aware files
---
-Main outputs:
-*us_corn_dtr_sf.rds
-*us_soy_dtr_sf.rds
-*global_wheat_dtr_sf.rds
-:::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-> Load_climate_data:
-Process GLEAM and CPC soil moisture and maximum temperature early (AM / MA) and late (JA / JJ) growing season periods
-Cut data based on crop yield shapefile
-Save output as dataframe for easy processing into county scale in next step
---Main outputs 
-*climate_sf_corn.rds
-*climate_sf_soy.rds
-*climate_sf_wheat.rds
-:::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-> Join_crop_climate_data:
-Tranform raster climate data into shapefiles based on crop data resolution
-Save output as one model data frame
---Main outputs:
-*model_data_soy.rds
-*model_data_corn.rds
-*model_data_wheat.rds
-:::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-> Model_fitting (model_fit_full | model_fit_no_interaction):
-Filter based on at least 30 crop yield data points per county
-Model no interaction omits the sequential interactions for comaprision purposes
-(optional) Standardize unit variables
-Fit mixed effect model per crop of the form incl. random intercept and random slopes for all covariates:
-detrended_yield ~ 1 + sm_spring*sm_summer + tmax_spring*tmax_summer + tmax_spring*sm_spring +sm_summer*tmax_summer
-:::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-> Extract key model metrics (+ compare_model_fit_vs_boostrap_mean_model_fit)
-Do quick relevant calculations to answer questions such as:
--How much added explained variance do we get from adding sequential interactions?
--How does a change in spring TX modulate the effect of summer TX
--How stable are model coefficients compared to boostrapped model with 1000 reps
-:::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-> Plot key model results (global effect + local effect plots)
-Plot fixed and random effects as bivariate plots and maps
-:::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-> Calculate yield and production projections based on cmip6 models
-Consider 4 scenarios and all models per scenarios
-Generate relevant figures
+* Run scripts sequentially following the numbering as scripts build on previous computed outputs
+* Check code_guide text file for additional guidance
