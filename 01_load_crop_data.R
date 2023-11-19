@@ -152,7 +152,7 @@ absolute_recent_soy_yield <-usda_soy_yield %>%
 #wheat us absolute yield average 2010-2021
 absolute_recent_wheat_yield_us <-usda_wheat_yield %>%
   rename(absolute_yield = Value) %>%
-  mutate(crop = "wheat") %>% 
+  mutate(crop = "wheat_us") %>% 
   filter(Year %in% 2010:2021) 
 #----------------------------------------------------------------------
 #wheat eu absolute yield average 2010-2021
@@ -165,12 +165,128 @@ absolute_recent_wheat_yield_eu <- eurostat_wheat_yield %>%
     Value = 3
   ) %>% 
   rename(absolute_yield = Value) %>%
-  mutate(crop = "wheat") %>% 
+  mutate(crop = "wheat_eu") %>% 
   filter(Year %in% 2010:2021) 
+#----------------------------------------------------------------------
+#join both into one spatial informed data-frame
+absolute_recent_yield_all_crops <- absolute_recent_corn_yield %>%
+  bind_rows(
+    absolute_recent_soy_yield,
+    absolute_recent_wheat_yield_us,
+    absolute_recent_wheat_yield_eu
+  ) 
+#======================================================================
+#Load recent yield and calculate weighted harvested areas
+#======================================================================
+#load USDA harvested soy data
+usda_soy_harvested_area <-
+  list.files(dir_usda,
+             "soybean_harvested_area",
+             full.names = TRUE) %>%
+  map_dfr(read.csv) %>%
+  dplyr::select(Year, State, County, Data.Item, Value) %>%
+  filter(Data.Item == "SOYBEANS - ACRES HARVESTED") %>%
+  filter(County != "OTHER (COMBINED) COUNTIES") %>%
+  filter(County != "OTHER COUNTIES") %>%
+  mutate(Value = gsub(",", "", Value) %>%  as.numeric) %>% 
+  group_by(State, County) %>%
+  filter(Year %in% 2010:2021) %>%
+  summarise_at(vars(Value), mean) %>%
+  ungroup()%>%
+  mutate(normalizer  = 1 / sum(Value)) %>%
+  mutate(weighted_harvest_area = normalizer * Value) %>%
+  dplyr::select(-normalizer) %>% 
+  mutate(crop = "soy")
+#----------------------------------------------------------------------
+#load USDA harvested maize data
+usda_maize_harvested_area <-
+  list.files(dir_usda,
+             "corn_harvested_area",
+             full.names = TRUE) %>%
+  map_dfr(read.csv) %>%
+  dplyr::select(Year, State, County, Data.Item, Value) %>%
+  filter(Data.Item == "CORN, GRAIN - ACRES HARVESTED") %>%
+  filter(County != "OTHER (COMBINED) COUNTIES") %>%
+  filter(County != "OTHER COUNTIES") %>%
+  mutate(Value = gsub(",", "", Value) %>%  as.numeric) %>% 
+  group_by(State, County) %>%
+  filter(Year %in% 2010:2021) %>%
+  summarise_at(vars(Value), mean) %>%
+  ungroup()%>%
+  mutate(normalizer  = 1 / sum(Value)) %>%
+  mutate(weighted_harvest_area = normalizer * Value) %>%
+  dplyr::select(-normalizer) %>% 
+  mutate(crop = "corn")
+#----------------------------------------------------------------------
+#load USDA harvested maize data
+usda_wheat_harvested_area <-
+  list.files(dir_usda,
+             "wheat_harvested_area",
+             full.names = TRUE) %>%
+  map_dfr(read.csv) %>%
+  dplyr::select(Year, State, County, Data.Item, Value) %>%
+  filter(Data.Item == "WHEAT, WINTER - ACRES HARVESTED") %>%
+  filter(County != "OTHER (COMBINED) COUNTIES") %>%
+  filter(County != "OTHER COUNTIES") %>%
+  mutate(Value = gsub(",", "", Value) %>%  as.numeric) %>% 
+  group_by(State, County) %>%
+  filter(Year %in% 2010:2021) %>%
+  summarise_at(vars(Value), mean) %>%
+  ungroup()%>%
+  mutate(normalizer  = 1 / sum(Value)) %>%
+  mutate(weighted_harvest_area = normalizer * Value) %>%
+  dplyr::select(-normalizer) %>% 
+  mutate(crop = "wheat_us")
+#----------------------------------------------------------------------
+absolute_recent_wheat_yield_eu <- eurostat_wheat_yield %>%
+  inner_join(shp_eu %>% dplyr::select(-geometry)) %>%
+  rename(
+    County = 1,
+    Year = 2,
+    State = 4,
+    Value = 3
+  ) %>% 
+  rename(absolute_yield = Value) %>%
+  mutate(crop = "wheat_eu") %>% 
+  filter(Year %in% 2010:2021) 
+
+#load USDA harvested maize data
+eurostat_wheat_harvested_area <-
+  list.files(dir_eurostat,
+             "cropstats",
+             full.names = TRUE) %>%
+  read.csv() %>%
+  filter(TYPE == "Area") %>%
+  filter(CROP_NAME == "C1100") %>%
+  dplyr::select(IDREGION, YEAR, VALUE) %>%
+  distinct() %>%
+  rename(NUTS_ID = IDREGION) %>%
+  arrange(YEAR) %>%
+  group_by(NUTS_ID) %>%
+  drop_na() %>% 
+  filter(YEAR %in% 2010:2021) %>%
+  summarise_at(vars(VALUE), mean) %>%
+  ungroup()%>%
+  mutate(normalizer  = 1 / sum(VALUE)) %>%
+  mutate(weighted_harvest_area = normalizer * VALUE) %>%
+  dplyr::select(-normalizer) %>% 
+  mutate(crop = "wheat_eu") %>% 
+  inner_join(shp_eu %>% dplyr::select(-geometry)) %>% 
+  rename(County = NUTS_ID) %>% 
+  rename(Value = VALUE) %>% 
+  rename(State = CNTR_CODE)
+  #----------------------------------------------------------------------
+#join both into one spatial informed data-frame
+global_crop_harvested_area <- usda_soy_harvested_area %>%
+  bind_rows(
+    usda_maize_harvested_area,
+    usda_wheat_harvested_area,
+    eurostat_wheat_harvested_area
+  ) 
 #======================================================================
 #transform data frame into SF object (i.e. add spatial dimension)
 #======================================================================
-#add spatial dimension to us wheat dataframe
+#add spatial dimension to us wheat data-frame
 usda_wheat_sf <- shp_us %>%
   left_join(usda_wheat_df, by = c("County", "State")) %>%
   drop_na() %>%
@@ -271,20 +387,12 @@ saveRDS(global_wheat_sf,
 saveRDS(usda_corn_sf, file.path(dir_model, "us_corn_dtr_sf.rds"))
 saveRDS(usda_soy_sf, file.path(dir_model, "us_soy_dtr_sf.rds"))
 #----------------------------------------------------------------------
-#save absolute yield data sets
+#save absolute yield and harvested area global data sets
 saveRDS(
-  absolute_recent_soy_yield,
-  file.path(dir_model, "absolute_recent_soy_yield_us.rds")
+  global_crop_harvested_area,
+  file.path(dir_model, "global_crop_harvested_area.rds")
 )
 saveRDS(
-  absolute_recent_corn_yield,
-  file.path(dir_model, "absolute_recent_corn_yield_us.rds")
-)
-saveRDS(
-  absolute_recent_wheat_yield_us,
-  file.path(dir_model, "absolute_recent_wheat_yield_us.rds")
-)
-saveRDS(
-  absolute_recent_wheat_yield_eu,
-  file.path(dir_model, "absolute_recent_wheat_yield_eu.rds")
+  absolute_recent_yield_all_crops,
+  file.path(dir_model, "global_absolute_recent_yield.rds")
 )

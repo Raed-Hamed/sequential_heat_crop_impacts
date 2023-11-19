@@ -14,6 +14,7 @@ library(colorspace)
 library(spData)
 library(tools)
 library(patchwork)
+library(magick)
 source("00_load_functions.R")
 #======================================================================
 #load directories
@@ -51,6 +52,52 @@ calc_yield_predictions <- function(data) {
   
   return(data)
 }
+
+#plot spatial yield projections
+plot_yield_projections <- function(crop_select,legend_title) {
+  plot <- yield_change_maps %>%
+    ungroup() %>%
+    filter(crop == crop_select) %>%
+    st_as_sf() %>%
+    ggplot(aes(fill = value)) +
+    geom_sf(color = "transparent") +
+    geom_sf(
+      data = us_state_shp,
+      color = "black",
+      size = 0.00000001,
+      fill = "transparent"
+    ) +
+    theme_void(base_size = 5) +
+    scale_fill_continuous_diverging(name = legend_title, "Red-Green") +
+    facet_grid(model_scenario~ name, switch = "y")+
+    theme(
+      legend.position = "bottom",
+      legend.key.size = unit(1, 'cm'),
+      legend.title.align = 0.5,
+      legend.title = element_text(size = 15, angle = 0),
+      legend.key.width = unit(5, "cm"),
+      legend.box = "horizontal",
+      plot.title = element_text(size = 20, hjust = 0.5),
+      strip.text.x = element_text(size = 15),
+      strip.text.y = element_text(size = 15, angle = 90),
+      legend.text = element_text(size = 15),
+      axis.title.x = element_blank(),
+      axis.text.x = element_blank(),
+      axis.ticks.x = element_blank(),
+      axis.title.y = element_blank(),
+      axis.text.y = element_blank(),
+      axis.ticks.y = element_blank(),
+      plot.margin = grid::unit(c(0, 0, 0, 0), "mm")
+    ) +
+    guides(fill = guide_colorbar(title.position = "bottom"))+
+    coord_sf(xlim = c(-125,-75), ylim = c(25, 50)) +
+    coord_sf(expand = FALSE)+
+    coord_sf(crs = "+proj=lcc +lon_0=-90 +lat_1=33 +lat_2=45") #+
+  
+
+    return(plot)
+}
+
 #======================================================================
 #load spatial info
 #======================================================================
@@ -267,7 +314,7 @@ soy_harvest_area_freq_change <- cmip6_tx_freq_change %>%
   dplyr::select(-data) %>%
   unnest(c(weighted_val)) %>%
   ungroup() %>%
-  mutate(crop = "Soybean")
+  mutate(crop = "Soybean-US")
 #----------------------------------------------------------------------
 #average frequency changes over maize harvested area using local weights
 maize_harvest_area_freq_change <-cmip6_tx_freq_change %>%
@@ -293,10 +340,95 @@ maize_harvest_area_freq_change <-cmip6_tx_freq_change %>%
   dplyr::select(-data) %>%
   unnest(c(weighted_val)) %>%
   ungroup() %>%
-  mutate(crop = "Maize")
+  mutate(crop = "Maize-US")
 #======================================================================
 #Generate summary plot (projections + frequency changes)
 #======================================================================
+#plot yield change maps
+yield_change_maps <- calc_yield_predictions_df %>%
+  filter(model_ref == "mea") %>%
+  separate(group_id, c("State", "County"), sep = "_") %>%
+  dplyr::select(
+    State,
+    County,
+    model_scenario,
+    tx_spring_effect ,
+    tx_summer_effect ,
+    sequential_heat_effect ,
+    predicted_yield,
+    crop
+  ) %>%
+  pivot_longer(tx_spring_effect:predicted_yield) %>%
+  mutate(name = factor(
+    name,
+    levels = c(
+      "tx_spring_effect",
+      "tx_summer_effect",
+      "sequential_heat_effect",
+      "predicted_yield"
+    )
+  )) %>%
+  mutate(name  = factor(
+    name ,
+    labels = c(
+      "Spring temperature",
+      "Summer temperature",
+      "Spring-Summer temperature interaction",
+      "Total"
+    )
+  )) %>%
+  inner_join(spatial_info %>%  filter(crop != "wheat")) %>%
+  mutate(
+    model_scenario = case_when(
+      model_scenario == "p119" ~ "ssp119",
+      model_scenario == "p126" ~ "ssp126",
+      model_scenario == "p245" ~ "ssp245",
+      model_scenario == "p370" ~ "ssp370",
+      TRUE ~ model_scenario
+    )
+  ) %>%
+  mutate(model_scenario  = factor(
+    model_scenario ,
+    labels = c("SSP1 1.9",
+               "SSP1 2.6",
+               "SSP2 4.5",
+               "SSP3 7.0")
+  )) %>%
+  mutate(crop = case_when(crop == "corn" ~ "Maize-US",
+                          crop == "soy" ~ "Soybean-US",
+                          TRUE ~ crop)) 
+#---------------------------------------------------------------------- 
+#plot projection for Soybean crop
+plot_soy_projections <-
+  plot_yield_projections("Soybean-US", "Projected soybean yield anomaly (t/ha)")
+
+#save png plot
+png(
+  file.path(dir_figures, "soy_projections.png"),
+  width = 15,
+  height = 15,
+  units = 'in',
+  res = 300
+) 
+print(plot_soy_projections)
+dev.off()
+#---------------------------------------------------------------------- 
+#plot projection for Soybean crop 
+plot_maize_projections <-
+  plot_yield_projections("Maize-US", "Projected maize yield anomaly (t/ha)")
+
+#save png plot
+png(
+  file.path(dir_figures, "frequency_change_future_climatology.png"),
+  width = 15,
+  height = 10,
+  units = 'in',
+  res = 300
+) 
+print(fi4a)
+dev.off()
+#---------------------------------------------------------------------- 
+#---------------------------------------------------------------------- 
 #plot frequency change
 fi4a <-bind_rows(soy_harvest_area_freq_change,
                  maize_harvest_area_freq_change) %>%
@@ -351,7 +483,8 @@ fi4a <-bind_rows(soy_harvest_area_freq_change,
     size = 6,
     position = position_dodge(width = 0.5)
   ) +
-  ggtitle(label = "a) Change in hot-hot event frequency")+
+  ggtitle(label = "a) Change in hot-hot event frequency relative to historic")+
+  geom_hline(yintercept = 0, linetype = "dashed")+
   theme_bw(base_size = 25) +
   theme(
     panel.grid = element_blank(),
@@ -401,7 +534,7 @@ fi4b <-ggplot() +
   ) +
   geom_hline(yintercept = 0)+
   theme_bw() +
-  ggtitle(label = "b) Total production of soybean in the US")+
+  ggtitle(label = "b) Total production change for soybean in the US")+
   scale_fill_manual("", values = c("aquamarine4", "tan3", "darkgoldenrod1", "darkred")) +
   theme(
     panel.grid = element_blank(),
@@ -453,7 +586,7 @@ fig4c <-ggplot() +
   ) +
   geom_hline(yintercept = 0)+
   theme_bw() +
-  ggtitle(label = "c) Total production of maize in the US")+
+  ggtitle(label = "c) Total production change for maize in the US")+
   scale_fill_manual("", values = c("aquamarine4", "tan3", "darkgoldenrod1", "darkred")) +
   theme(
     panel.grid = element_blank(),
@@ -477,13 +610,12 @@ fig4c <-ggplot() +
 fig4 <-fi4a + (fi4b/fig4c)
 
 png(
-  file.path(dir_figures, "tx_frequency_and_impact_change.png"),
-  width = 20,
-  height = 12,
+  file.path(dir_figures, "tx_frequency_and_impact_change_v2.png"),
+  width = 21,
+  height = 11,
   units = 'in',
   res = 300
-)
-
+) 
 print(fig4)
 dev.off()
 
