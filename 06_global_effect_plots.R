@@ -186,7 +186,7 @@ global_absolute_yield <-
   summarise_at(vars(absolute_yield),mean) %>% 
   ungroup()
 #----------------------------------------------------------------------
-#load average corn recent yield
+#Join harvest area and absolute yield to make weighted spatial average
 recent_avg_yield_all <-
   inner_join(global_harvested_area, global_absolute_yield) %>%
   group_by(crop) %>%
@@ -360,15 +360,7 @@ bivariate_corn_us_plot <-
   bivariate_interaction_plot(
   model = model_space_predictions %>%
     filter(area == "corn_us"),
-    # mutate(yield_anomaly_predict = 
-    #          yield_anomaly_predict / 
-    #          avg_recent_maize_yield %>%
-    #          pull *100)
   observation = model_df  %>%
-    # mutate(crop_yield = 
-    #          crop_yield / 
-    #          avg_recent_maize_yield %>%
-    #          pull *100) %>% 
     filter(crop == "corn"),
   plot_title = "b) Maize-US"
 ) + geom_hline(
@@ -393,17 +385,9 @@ bivariate_soy_us_plot <-
 bivariate_interaction_plot(
   model = model_space_predictions %>%
     filter(area == "soy_us") , 
-    # mutate(yield_anomaly_predict = 
-    #          yield_anomaly_predict / 
-    #          avg_recent_soy_yield %>%
-    #          pull *100)
   observation = 
     model_df %>%  
-    # mutate(crop_yield = 
-    #          crop_yield / 
-    #          avg_recent_soy_yield %>%
-    #          pull *100) %>% 
-    filter(crop == "soy"),
+   filter(crop == "soy"),
   plot_title = "a) Soybean-US"
 )+ geom_hline(
   data = spring_tx_quantile_values %>%
@@ -481,6 +465,17 @@ delta_slope_effect <- model_df %>%
   mutate(estimate = estimate / yield_est *100,
          upr = upr/yield_est*100,
          lwr = lwr/yield_est*100)
+
+#------------------------------------------------------------------------
+#when do red and blue lines cross ?
+delta_slope_effect %>%
+  dplyr::select(-upr, -lwr, -yield_est) %>% 
+  pivot_wider(names_from = spring_tx, values_from = estimate) %>%
+  mutate(upr_mid = `95%` - `50%`) %>% 
+  mutate(upr_lwr = `95%` - `5%`)  %>%
+  filter(upr_lwr <= 0) %>% 
+  filter(area == c("soy_us")) %>% 
+  arrange(desc(upr_lwr, .by_group = TRUE))
 #======================================================================
 #plot sequential heat delta slope effect
 #======================================================================

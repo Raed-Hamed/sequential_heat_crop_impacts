@@ -52,7 +52,7 @@ calc_yield_predictions <- function(data) {
   
   return(data)
 }
-
+#----------------------------------------------------------------------
 #plot spatial yield projections
 plot_yield_projections <- function(crop_select,legend_title) {
   plot <- yield_change_maps %>%
@@ -94,8 +94,8 @@ plot_yield_projections <- function(crop_select,legend_title) {
     coord_sf(expand = FALSE)+
     coord_sf(crs = "+proj=lcc +lon_0=-90 +lat_1=33 +lat_2=45") #+
   
-
-    return(plot)
+  
+  return(plot)
 }
 
 #======================================================================
@@ -117,93 +117,29 @@ us_state_shp <- list.files(dir_shp, ".json", full.names = TRUE) %>%
   mutate(NAME_1  = NAME_1 %>%  str_to_upper) %>%
   filter(!NAME_1 %in%  c("ALASKA", "HAWAII"))
 #======================================================================
-#load harvested data
+#Load recent yield and calculate weighted harvested areas
 #======================================================================
 #load USDA harvested soy data
-usda_soy_harvested_area <-
-  list.files(dir_usda,
-             "soybean_harvested_area",
+global_harvested_area <-
+  list.files(dir_model,
+             "global_crop_harvested_area",
              full.names = TRUE) %>%
-  map_dfr(read.csv) %>%
-  dplyr::select(Year, State, County, Data.Item, Value) %>%
-  filter(Data.Item == "SOYBEANS - ACRES HARVESTED") %>%
-  filter(County != "OTHER (COMBINED) COUNTIES") %>%
-  filter(County != "OTHER COUNTIES") %>%
-  mutate(Value = gsub(",", "", Value) %>%  as.numeric) %>% 
-  mutate(Value = Value /  2.471) %>%
-  arrange(Year) %>%
-  dplyr::select(-Data.Item) %>%
-  filter(Value != 0) %>%
-  group_by(State, County) %>%
-  filter(Year %in% 2010:2021) %>%
-  summarise_at(vars(Value), mean) %>%
-  ungroup()%>%
-  mutate(normalizer  = 1 / sum(Value)) %>%
-  mutate(weighted_harvest_area = normalizer * Value) %>%
-  dplyr::select(-normalizer) %>% 
-  mutate(crop = "soy")
-#----------------------------------------------------------------------
-#load USDA harvested maize data
-usda_maize_harvested_area <-
-  list.files(dir_usda,
-             "corn_harvested_area",
-             full.names = TRUE) %>%
-  map_dfr(read.csv) %>%
-  dplyr::select(Year, State, County, Data.Item, Value) %>%
-  filter(Data.Item == "CORN, GRAIN - ACRES HARVESTED") %>%
-  filter(County != "OTHER (COMBINED) COUNTIES") %>%
-  filter(County != "OTHER COUNTIES") %>%
-  mutate(Value = gsub(",", "", Value) %>%  as.numeric) %>%
-  mutate(Value = Value /  2.471) %>%
-  arrange(Year) %>%
-  dplyr::select(-Data.Item) %>%
-  filter(Value != 0) %>%
-  group_by(State, County) %>%
-  filter(Year %in% 2010:2021) %>%
-  summarise_at(vars(Value), mean) %>%
-  ungroup() %>% 
-  mutate(normalizer  = 1 / sum(Value)) %>%
-  mutate(weighted_harvest_area = normalizer * Value) %>%
-  dplyr::select(-normalizer) %>% 
-  mutate(crop = "corn")
-#----------------------------------------------------------------------
-#join harvesting areas
-harvested_are_2010_2021 <-
-  bind_rows(usda_soy_harvested_area, usda_maize_harvested_area)
+  readRDS()
 #----------------------------------------------------------------------
 #load average soy recent yield
-avg_recent_soy_yield <- list.files(dir_model,
-                                   "absolute_recent_soy_yield_us.rds" ,
-                                   full.names = TRUE) %>%
-  readRDS()
-#----------------------------------------------------------------------
-#load average corn recent yield
-avg_recent_maize_yield <- list.files(dir_model,
-                                     "absolute_recent_corn_yield_us.rds" ,
-                                     full.names = TRUE) %>%
-  readRDS()
+global_absolute_yield <-
+  list.files(dir_model,
+             "global_absolute_recent_yield.rds" ,
+             full.names = TRUE) %>%
+  readRDS() %>% 
+  group_by(State,County,crop) %>% 
+  summarise_at(vars(absolute_yield),mean) %>% 
+  ungroup()
 #----------------------------------------------------------------------
 #calculate recent production area (2010-2021)
-crop_recent_production_avg <- avg_recent_soy_yield %>%
-  mutate(crop = "soy") %>%
-  bind_rows(avg_recent_maize_yield %>%
-              mutate(crop = "corn")) %>%
-  filter(absolute_yield  != 0) %>%
-  group_by(State, County, crop) %>%
-  filter(Year %in% 2010:2021) %>%
-  summarise_at(vars(absolute_yield), mean) %>%
-  ungroup() %>%
-  inner_join(harvested_are_2010_2021) %>%
-  mutate(production_total = absolute_yield * Value) %>%
-  dplyr::select(-weighted_harvest_area)
-#----------------------------------------------------------------------
-#clean some memory space
-rm(
-  avg_recent_maize_yield,
-  avg_recent_soy_yield,
-  usda_maize_harvested_area,
-  usda_soy_harvested_area
-)
+recent_production_area <-
+  inner_join(global_harvested_area, global_absolute_yield) %>%
+  mutate(production_total = absolute_yield * Value) 
 #======================================================================
 #load crop yield projections
 #======================================================================
@@ -228,11 +164,11 @@ crop_production_anomaly <- calc_yield_predictions_df %>%
     crop
   ) %>%
   separate(group_id, c("State", "County"), sep = "_") %>%
-  inner_join(harvested_are_2010_2021 %>%
+  inner_join(global_harvested_area %>%
                dplyr::select(-weighted_harvest_area)) %>%
   pivot_longer(tx_spring_effect:predicted_yield) %>%
   mutate(production_change = value * Value) %>%
-  inner_join(crop_recent_production_avg) %>%
+  inner_join(recent_production_area) %>%
   group_by(model_scenario, name, crop, model_ref) %>%
   summarise_at(vars(production_change, production_total), sum) %>%
   mutate(production_anomaly = production_change / production_total  * 100) %>%
@@ -295,9 +231,8 @@ soy_harvest_area_freq_change <- cmip6_tx_freq_change %>%
   filter(percentile == 75) %>%
   mutate(State = NAME_1 %>%  str_to_upper()) %>%
   mutate(County = NAME_2 %>%  str_to_upper()) %>%
-  inner_join(harvested_are_2010_2021 %>%
-               filter(crop == "soy")) %>%
-  dplyr::select(-geometry, -X.M_incre, -X.M_ampli) %>%
+  inner_join(global_harvested_area %>% filter(crop == "soy")) %>%
+  dplyr::select(-geometry,-X.M_incre,-X.M_ampli) %>%
   pivot_longer(M_0:M_23) %>%
   dplyr::select(model_scenario,
                 reference,
@@ -321,8 +256,7 @@ maize_harvest_area_freq_change <-cmip6_tx_freq_change %>%
   filter(percentile == 75) %>%
   mutate(State = NAME_1 %>%  str_to_upper()) %>%
   mutate(County = NAME_2 %>%  str_to_upper()) %>%
-  inner_join(harvested_are_2010_2021 %>%
-               filter(crop == "corn")) %>%
+  inner_join(global_harvested_area %>% filter(crop == "corn")) %>%
   dplyr::select(-geometry,-X.M_incre,-X.M_ampli) %>%
   pivot_longer(M_0:M_23) %>%
   dplyr::select(model_scenario,
@@ -427,7 +361,6 @@ png(
 ) 
 print(fi4a)
 dev.off()
-#---------------------------------------------------------------------- 
 #---------------------------------------------------------------------- 
 #plot frequency change
 fi4a <-bind_rows(soy_harvest_area_freq_change,
@@ -618,5 +551,3 @@ png(
 ) 
 print(fig4)
 dev.off()
-
-

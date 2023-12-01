@@ -305,3 +305,16 @@ plot_temperature_change <-cmip6_tx_delta_change_per_model %>%
       coord_sf(xlim = c(-125,-75), ylim = c(25, 50)) +
       coord_sf(expand = FALSE)+
       coord_sf(crs = "+proj=lcc +lon_0=-90 +lat_1=33 +lat_2=45")
+
+#----------------------------------------------------------------------
+#save wheat eu climate sensitivity plot
+png(
+  file.path(dir_figures, "delta_temperatures.png"),
+  width = 15,
+  height = 10,
+  units = 'in',
+  res = 300
+)
+print(plot_temperature_change)
+dev.off()
+
