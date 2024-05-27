@@ -1,1 +1,5 @@
-# sequential_heat_crop_impacts
+# Code to reproduce sequential heat crop analysis
+# Contact person: Raed Hamed (raed.hamed@vu.nl)
+
+* Run scripts sequentially following the numbering as scripts build on previous computed outputs
+* Check code_guide text file for additional guidance
