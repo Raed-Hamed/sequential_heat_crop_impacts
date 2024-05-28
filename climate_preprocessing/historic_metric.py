@@ -1,3 +1,5 @@
+import os
+import re
 import numpy as np
 import xarray as xr
 from pathlib import Path
@@ -151,4 +153,145 @@ def sm_metrics(path_moisture, lon_bounds, lat_bounds, crops, variable='SMroot'):
     return final_dataset
 
 
+"""CMIP 6"""
 
+# def get_cmip6_per_model(dir_cmip):
+#     """Get dictionary with all CMIP6 files per climate model"""    
+#     historic_dir = Path(os.path.join(dir_cmip, 'historical'))
+#     future_dir = Path(os.path.join(dir_cmip, 'future'))
+    
+#     climate_model_files = {}
+#     # Step 1: Determine climate model used in historic files and store historic file path
+#     for root, _, files in os.walk(historic_dir):
+#         for filename in files:
+#             parts = filename.split('_')
+#             if len(parts) >= 2:
+#                 climate_model = parts[1]
+#                 historic_file = os.path.join(root, filename)
+#                 climate_model_files[climate_model] = {"historic_file": historic_file, "future_files": []}
+    
+#     # Step 2: Find future files for each climate model
+#     for climate_model, data in climate_model_files.items():
+#         for root, _, files in os.walk(future_dir):
+#             for filename in files:
+#                 if filename.startswith(f"tasmax_{climate_model}"):
+#                     future_file = os.path.join(root, filename)
+#                     data["future_files"].append(future_file)
+
+#     return climate_model_files
+
+
+
+
+def get_cmip6_per_model(dir_cmip):
+    """Get dictionary with all CMIP6 files per climate model"""    
+    historic_dir = Path(os.path.join(dir_cmip, 'historical'))
+    future_dir = Path(os.path.join(dir_cmip, 'future'))
+    
+    climate_model_files = {}
+    
+    # Step 1: Determine climate model used in historic files and store historic file path
+    for root, _, files in os.walk(historic_dir):
+        for filename in files:
+            parts = filename.split('_')
+            if len(parts) >= 2:
+                climate_model = parts[1]
+                historic_file = os.path.join(root, filename)
+                climate_model_files[climate_model] = {"historic_file": historic_file, "future_files": []}
+    
+    # Step 2: Find future files for each climate model
+    for climate_model in climate_model_files.keys():
+        for root, _, files in os.walk(future_dir):
+            for filename in files:
+                # Extract the climate model part from the filename
+                match = re.match(r'tasmax_([^_]+)_ssp\d+.*\.nc', filename)
+                if match and match.group(1) == climate_model:
+                    future_file = os.path.join(root, filename)
+                    climate_model_files[climate_model]["future_files"].append(future_file)
+
+    return climate_model_files
+
+def get_monthly_sub(t_his_path, lon_bounds_t, lat_bounds, crops, variable='tasmax', nr_years=40):
+    t_monthly = sm_metrics(t_his_path, lon_bounds_t, lat_bounds, crops, variable)
+    t_monthly = t_monthly.drop_vars('height')
+    #mean over the chosen time period
+    final_year = t_monthly.year.max()
+    start_year = final_year-nr_years+1
+    t_sub = t_monthly.sel(year=slice(start_year, final_year))
+    
+    return t_sub
+
+
+def compute_cooccurence(t_sub, t_quantile, crops):
+    binary_data = xr.where(t_sub >= t_quantile, 1, 0)
+
+    # Initialize an empty dictionary to store the results
+    concurrence_results = {}
+    
+    # Loop over each crop to compute concurrences
+    for crop in crops:
+        spring_key = f"{crop}_spring"
+        summer_key = f"{crop}_summer"
+        
+        # Logical AND for spring and summer
+        both = (binary_data[spring_key] == 1) & (binary_data[summer_key] == 1)
+        
+        # Count the number of concurrences per lat/lon by summing along the 'year' dimension
+        concurrence = both.sum(dim='year')
+        
+        # Store the result in the dictionary
+        concurrence_results[f"{crop}_concurrence"] = concurrence
+    
+    # Create a new Dataset to store these results
+    concurrence_dataset = xr.Dataset(concurrence_results, coords={"lat": binary_data.lat, "lon": binary_data.lon})
+    
+    
+    return concurrence_dataset
+
+def extract_ssp(file_path):
+    match = re.search(r'ssp(\d{3})', file_path)
+    return match.group(0) if match else None
+
+def get_data_model(climate_model_files, model, quantile, lon_bounds_t, lat_bounds, crops, variable):
+    his_path = climate_model_files[model]['historic_file']
+    var_historic = get_monthly_sub(his_path, lon_bounds_t, lat_bounds, crops, variable=variable)
+    # compute the quantile
+    his_quantile = var_historic.quantile(q=quantile, dim='year') 
+    mean_his = var_historic.mean(dim='year')
+    cooccurence_his = compute_cooccurence(var_historic, his_quantile, crops)
+    
+    list_data = []
+    for file in climate_model_files[model]['future_files']:
+        ssp = extract_ssp(file)
+        var_future = get_monthly_sub(file, lon_bounds_t, lat_bounds, crops, variable=variable)
+        
+        mean_fut = var_future.mean(dim='year')
+        diff_mean = mean_fut-mean_his
+        # Create a dictionary to map old variable names to new variable names
+        rename_dict = {var: f"delta_{variable}_{ssp}_{var}" for var in diff_mean.data_vars}
+        # Rename the variables in the Dataset
+        diff_mean_renamed = diff_mean.rename(rename_dict)
+        
+        cooccurence_fut_ref_his = compute_cooccurence(var_future, his_quantile, crops)
+        diff_freq_his = (cooccurence_fut_ref_his/cooccurence_his)-1
+        # Create a dictionary to map old variable names to new variable names
+        rename_dict = {var: f"his-reference_{variable}_{ssp}_{var}" for var in diff_freq_his.data_vars}
+        # Rename the variables in the Dataset
+        diff_freq_his_renamed = diff_freq_his.rename(rename_dict)
+        
+        fut_quantile = var_future.quantile(q=quantile, dim='year') 
+        cooccurence_fut_ref_fut = compute_cooccurence(var_future, fut_quantile, crops)
+        diff_freq_fut = (cooccurence_fut_ref_fut/cooccurence_his)-1
+        # Create a dictionary to map old variable names to new variable names
+        rename_dict = {var: f"fut-reference_{variable}_{ssp}_{var}" for var in diff_freq_fut.data_vars}
+        # Rename the variables in the Dataset
+        diff_freq_fut_renamed = diff_freq_fut.rename(rename_dict)
+        
+        
+        merged = xr.merge([diff_mean_renamed, diff_freq_his_renamed, diff_freq_fut_renamed])
+        
+        list_data.append(merged)
+    
+    data_model = xr.merge(list_data)  
+    
+    return data_model
