@@ -3,6 +3,9 @@ import re
 import numpy as np
 import xarray as xr
 from pathlib import Path
+import geopandas as gpd
+import xesmf as xe
+import pandas as pd
 
 SEASONS = ['spring', 'summer']
 
@@ -19,6 +22,23 @@ CROPS_DICT = {'wheat': {'spring_season': [3,4],
                         'summer_month': 8,
                         'threshold_summer': 30.5}
               }
+
+
+def extract_bbox(file, lon_bounds, lat_bounds):
+    
+    dataset  = xr.open_dataset(file)
+    
+    # Adjust the longitude values from 0-360 to -180-180
+    dataset['lon'] = xr.where(dataset['lon'] > 180, dataset['lon'] - 360, dataset['lon'])
+    
+    # Sort the longitude coordinates
+    ds = dataset.sortby('lon')
+    
+    study_area = ds.sel(lon=slice(lon_bounds[0], lon_bounds[1]), 
+                            lat=slice(lat_bounds[0], lat_bounds[1])) 
+    
+    return study_area
+
 
 
 def monthly_t_metrics(path, lon_bounds, lat_bounds, months, thresholds, years):
@@ -40,22 +60,8 @@ def monthly_t_metrics(path, lon_bounds, lat_bounds, months, thresholds, years):
     return output
 
 def compute_t_metrics(file, lon_bounds, lat_bounds, months, thresholds, variable='tmax'):
-    
-    ds  = xr.open_dataset(file)
-    
-    # Select data within the specified bounds
-    if lon_bounds[0] > lon_bounds[1]:
-        # As the CPC data coordinates range from 0 to 360, this step might be 
-        # necessary in case the study area crosses the meridian line
-        study_area = ds.sel(lon=slice(lon_bounds[0], 360), 
-                                     lat=slice(lat_bounds[0], lat_bounds[1])
-                                     ).combine_first(ds.sel(
-                                         lon=slice(0, lon_bounds[1]),
-                                         lat=slice(lat_bounds[0], lat_bounds[1])))
-    else:
-        study_area = ds.sel(lon=slice(lon_bounds[0], lon_bounds[1]), 
-                                lat=slice(lat_bounds[0], lat_bounds[1])) 
                                          
+    study_area = extract_bbox(file, lon_bounds, lat_bounds)
     
     # Select data for the months from March to August
     months_selection = study_area.sel(time=study_area['time.month'].isin(months))
@@ -119,13 +125,10 @@ def annual_t_metrics(t_monthly, crops, metrics):
     return final
 
 
-def sm_metrics(path_moisture, lon_bounds, lat_bounds, crops, variable='SMroot'):
-    
-    ds_moisture = xr.open_dataset(path_moisture)
-    
-    study_area = ds_moisture.sel(lon=slice(lon_bounds[0], lon_bounds[1]), 
-                                 lat=slice(lat_bounds[0], lat_bounds[1])) 
+def metrics_from_timperiod(file, lon_bounds, lat_bounds, crops, variable='SMroot'):
 
+    study_area = extract_bbox(file, lon_bounds, lat_bounds)
+    
     sum_metric = []
     name_metric = []
     for crop in crops:
@@ -155,35 +158,7 @@ def sm_metrics(path_moisture, lon_bounds, lat_bounds, crops, variable='SMroot'):
 
 """CMIP 6"""
 
-# def get_cmip6_per_model(dir_cmip):
-#     """Get dictionary with all CMIP6 files per climate model"""    
-#     historic_dir = Path(os.path.join(dir_cmip, 'historical'))
-#     future_dir = Path(os.path.join(dir_cmip, 'future'))
-    
-#     climate_model_files = {}
-#     # Step 1: Determine climate model used in historic files and store historic file path
-#     for root, _, files in os.walk(historic_dir):
-#         for filename in files:
-#             parts = filename.split('_')
-#             if len(parts) >= 2:
-#                 climate_model = parts[1]
-#                 historic_file = os.path.join(root, filename)
-#                 climate_model_files[climate_model] = {"historic_file": historic_file, "future_files": []}
-    
-#     # Step 2: Find future files for each climate model
-#     for climate_model, data in climate_model_files.items():
-#         for root, _, files in os.walk(future_dir):
-#             for filename in files:
-#                 if filename.startswith(f"tasmax_{climate_model}"):
-#                     future_file = os.path.join(root, filename)
-#                     data["future_files"].append(future_file)
-
-#     return climate_model_files
-
-
-
-
-def get_cmip6_per_model(dir_cmip):
+def get_model_list(dir_cmip):
     """Get dictionary with all CMIP6 files per climate model"""    
     historic_dir = Path(os.path.join(dir_cmip, 'historical'))
     future_dir = Path(os.path.join(dir_cmip, 'future'))
@@ -193,6 +168,8 @@ def get_cmip6_per_model(dir_cmip):
     # Step 1: Determine climate model used in historic files and store historic file path
     for root, _, files in os.walk(historic_dir):
         for filename in files:
+            if filename == '.DS_Store':
+                continue  # Skip the ds.store file
             parts = filename.split('_')
             if len(parts) >= 2:
                 climate_model = parts[1]
@@ -211,10 +188,21 @@ def get_cmip6_per_model(dir_cmip):
 
     return climate_model_files
 
-def get_monthly_sub(t_his_path, lon_bounds_t, lat_bounds, crops, variable='tasmax', nr_years=40):
-    t_monthly = sm_metrics(t_his_path, lon_bounds_t, lat_bounds, crops, variable)
-    t_monthly = t_monthly.drop_vars('height')
-    #mean over the chosen time period
+def get_monthly_sub(t_his_path, lon_bounds, lat_bounds, crops, variable='tasmax', nr_years=40):
+    
+    t_monthly = metrics_from_timperiod(t_his_path, lon_bounds, lat_bounds, crops, variable)
+    
+    # drop additional coordinate axis if present for this model
+    try:
+        t_monthly = t_monthly.drop_vars('height')
+    except ValueError:
+        pass     
+    try:
+        t_monthly = t_monthly.drop_vars('depth')
+    except ValueError:
+        pass     
+    
+    # extract variable for nr-years (last x years in the dataset)
     final_year = t_monthly.year.max()
     start_year = final_year-nr_years+1
     t_sub = t_monthly.sel(year=slice(start_year, final_year))
@@ -252,18 +240,19 @@ def extract_ssp(file_path):
     match = re.search(r'ssp(\d{3})', file_path)
     return match.group(0) if match else None
 
-def get_data_model(climate_model_files, model, quantile, lon_bounds_t, lat_bounds, crops, variable):
+def get_data_model(climate_model_files, model, quantile, lon_bounds_t, lat_bounds, crops, variable, coord_drop='height', nr_years=40):
     his_path = climate_model_files[model]['historic_file']
-    var_historic = get_monthly_sub(his_path, lon_bounds_t, lat_bounds, crops, variable=variable)
+    var_historic = get_monthly_sub(his_path, lon_bounds_t, lat_bounds, crops, variable, coord_drop, nr_years)
     # compute the quantile
     his_quantile = var_historic.quantile(q=quantile, dim='year') 
     mean_his = var_historic.mean(dim='year')
     cooccurence_his = compute_cooccurence(var_historic, his_quantile, crops)
     
-    list_data = []
+    list_data_delta = []
+    list_data_frequency = []
     for file in climate_model_files[model]['future_files']:
         ssp = extract_ssp(file)
-        var_future = get_monthly_sub(file, lon_bounds_t, lat_bounds, crops, variable=variable)
+        var_future = get_monthly_sub(file, lon_bounds_t, lat_bounds, crops, variable, coord_drop, nr_years)
         
         mean_fut = var_future.mean(dim='year')
         diff_mean = mean_fut-mean_his
@@ -271,6 +260,7 @@ def get_data_model(climate_model_files, model, quantile, lon_bounds_t, lat_bound
         rename_dict = {var: f"delta_{variable}_{ssp}_{var}" for var in diff_mean.data_vars}
         # Rename the variables in the Dataset
         diff_mean_renamed = diff_mean.rename(rename_dict)
+        list_data_delta.append(diff_mean_renamed)
         
         cooccurence_fut_ref_his = compute_cooccurence(var_future, his_quantile, crops)
         diff_freq_his = (cooccurence_fut_ref_his/cooccurence_his)-1
@@ -287,11 +277,66 @@ def get_data_model(climate_model_files, model, quantile, lon_bounds_t, lat_bound
         # Rename the variables in the Dataset
         diff_freq_fut_renamed = diff_freq_fut.rename(rename_dict)
         
+        merged = xr.merge([diff_freq_his_renamed, diff_freq_fut_renamed])
         
-        merged = xr.merge([diff_mean_renamed, diff_freq_his_renamed, diff_freq_fut_renamed])
-        
-        list_data.append(merged)
+        list_data_frequency.append(merged)
     
-    data_model = xr.merge(list_data)  
+    data_delta = xr.merge(list_data_delta)  
+    data_frequency = xr.merge(list_data_frequency)  
     
-    return data_model
+    return data_delta, data_frequency
+
+
+
+# """old functions to get mean per county"""
+
+# def fct_mean_per_county(ds, model, var_name, crops_shapefile):
+#     ds_out = regrid_cmip6(ds, model, var_name)
+#     gdf = create_gdf_from_ds(ds_out, var_name)            
+#     points_polys = gpd.sjoin(gdf, crops_shapefile, how="left")
+#     stats_pt = points_polys.groupby('index_right')[0].agg(['mean']) #nanmean
+#     result = pd.merge(crops_shapefile, stats_pt , left_index=True, right_index=True, how='outer')
+#     mean_per_county = np.asarray(result['mean'].values)
+    
+#     return mean_per_county
+
+# def regrid_cmip6(ds, model, var_name):
+    
+#     regridder_dir = '/Users/carmenst/Documents/Polybox/WCR/Conferences_summerschools/2022_10_Como/Project/Sequential_heat_crops/Data/Climate/regridder'
+#     regridder_file = regridder_dir+'/regridder_'+model+'.nc'
+    
+#     ds_lat = ds.lat.values
+#     ds_lon = ds.lon.values-360
+    
+#     ds_in = xr.Dataset(
+#         {
+#             "lat": (["lat"], ds_lat, {"units": "degrees_north"}),
+#             "lon": (["lon"], ds_lon, {"units": "degrees_east"}),
+#         }
+#     )
+    
+#     ds_out = xr.Dataset(
+#         {
+#             "lat": (["lat"], np.arange(np.min(ds_lat), np.max(ds_lat), 0.1), {"units": "degrees_north"}),
+#             "lon": (["lon"], np.arange(np.min(ds_lon), np.max(ds_lon), 0.1), {"units": "degrees_east"}),
+#         }
+#     )
+    
+    
+#     if os.path.isfile(regridder_file):
+#         regridder = xe.Regridder(ds_in, ds_out, 'conservative', weights=regridder_file)
+#     else:
+#         regridder = xe.Regridder(ds_in, ds_out, "conservative", ignore_degenerate=True)
+#         regridder.to_netcdf(regridder_file)        
+    
+#     regridded_ds = regridder(ds[var_name].values)    
+#     ds_out[var_name] = (('lat', 'lon'), regridded_ds)
+    
+#     return ds_out
+
+# def create_gdf_from_ds(ds, var_name):
+#     lon1, lat1 = np.meshgrid(ds.lon.values, ds.lat.values)
+#     geometry = gpd.points_from_xy(lon1.flatten(), lat1.flatten())
+#     gdf = gpd.GeoDataFrame(ds[var_name].values.flatten(), crs="EPSG:4326", geometry=geometry)
+    
+#     return gdf
