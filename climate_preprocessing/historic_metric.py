@@ -4,8 +4,10 @@ import numpy as np
 import xarray as xr
 from pathlib import Path
 import geopandas as gpd
-import xesmf as xe
 import pandas as pd
+from shapely.geometry import Point
+from scipy.spatial import cKDTree
+
 
 SEASONS = ['spring', 'summer']
 
@@ -22,6 +24,11 @@ CROPS_DICT = {'wheat': {'spring_season': [3,4],
                         'summer_month': 8,
                         'threshold_summer': 30.5}
               }
+
+FILENAMES_DICT = {'delta_per_model': "delta_{variable}_{ssp}_{var}",
+                  'his_reference_per_model': "his-reference_{variable}_{ssp}_{var}",
+                  'future_reference_per_model': "future-reference_{variable}_{ssp}_{var}",
+    }
 
 
 def extract_bbox(file, lon_bounds, lat_bounds):
@@ -119,10 +126,31 @@ def annual_t_metrics(t_monthly, crops, metrics):
     for name, metric in zip(name_metric, sum_metric):
         final_dataset[name] = metric
 
-    final = final_dataset.drop_vars('month')
+    ds_output = final_dataset.drop_vars('month')
+    
+    return ds_output
+
+
+def annual_seasonal_means(t_monthly, crops):
+    """Simplified version of annual_t_metrics only computing seasonal mean over two months"""
+    sum_metric = []
+    name_metric = []
+    for crop in crops:
+        crop_var = CROPS_DICT[crop]
+        for season in SEASONS:
+            #monthly mean across months
+            metric_values = t_monthly['monthly_mean']
+            sum_metric.append(metric_values.sel(month=slice(*crop_var[f'{season}_season'])).groupby('year').mean('month'))
+            name_metric.append(crop+'_'+season)
+            
+    # Create an empty dataset
+    final_dataset = xr.Dataset()
+    # Add variables to the dataset
+    for name, metric in zip(name_metric, sum_metric):
+        final_dataset[name] = metric
     
     
-    return final
+    return final_dataset
 
 
 def metrics_from_timperiod(file, lon_bounds, lat_bounds, crops, variable='SMroot'):
@@ -225,10 +253,10 @@ def compute_cooccurence(t_sub, t_quantile, crops):
         both = (binary_data[spring_key] == 1) & (binary_data[summer_key] == 1)
         
         # Count the number of concurrences per lat/lon by summing along the 'year' dimension
-        concurrence = both.sum(dim='year')
+        coocurrence = both.sum(dim='year')
         
         # Store the result in the dictionary
-        concurrence_results[f"{crop}_concurrence"] = concurrence
+        concurrence_results[f"{crop}_coocurrence"] = coocurrence
     
     # Create a new Dataset to store these results
     concurrence_dataset = xr.Dataset(concurrence_results, coords={"lat": binary_data.lat, "lon": binary_data.lon})
@@ -242,7 +270,7 @@ def extract_ssp(file_path):
 
 def get_data_model(climate_model_files, model, quantile, lon_bounds_t, lat_bounds, crops, variable, coord_drop='height', nr_years=40):
     his_path = climate_model_files[model]['historic_file']
-    var_historic = get_monthly_sub(his_path, lon_bounds_t, lat_bounds, crops, variable, coord_drop, nr_years)
+    var_historic = get_monthly_sub(his_path, lon_bounds_t, lat_bounds, crops, variable, nr_years)
     # compute the quantile
     his_quantile = var_historic.quantile(q=quantile, dim='year') 
     mean_his = var_historic.mean(dim='year')
@@ -252,12 +280,13 @@ def get_data_model(climate_model_files, model, quantile, lon_bounds_t, lat_bound
     list_data_frequency = []
     for file in climate_model_files[model]['future_files']:
         ssp = extract_ssp(file)
-        var_future = get_monthly_sub(file, lon_bounds_t, lat_bounds, crops, variable, coord_drop, nr_years)
+        var_future = get_monthly_sub(file, lon_bounds_t, lat_bounds, crops, variable, nr_years)
         
         mean_fut = var_future.mean(dim='year')
         diff_mean = mean_fut-mean_his
         # Create a dictionary to map old variable names to new variable names
-        rename_dict = {var: f"delta_{variable}_{ssp}_{var}" for var in diff_mean.data_vars}
+        rename_dict = {var: FILENAMES_DICT['delta_per_model'].format(variable=variable, 
+                                                                     ssp=ssp, var=var) for var in diff_mean.data_vars}
         # Rename the variables in the Dataset
         diff_mean_renamed = diff_mean.rename(rename_dict)
         list_data_delta.append(diff_mean_renamed)
@@ -265,7 +294,8 @@ def get_data_model(climate_model_files, model, quantile, lon_bounds_t, lat_bound
         cooccurence_fut_ref_his = compute_cooccurence(var_future, his_quantile, crops)
         diff_freq_his = (cooccurence_fut_ref_his/cooccurence_his)-1
         # Create a dictionary to map old variable names to new variable names
-        rename_dict = {var: f"his-reference_{variable}_{ssp}_{var}" for var in diff_freq_his.data_vars}
+        rename_dict = {var: FILENAMES_DICT['his_reference_per_model'].format(variable=variable, 
+                                                                     ssp=ssp, var=var) for var in diff_freq_his.data_vars}
         # Rename the variables in the Dataset
         diff_freq_his_renamed = diff_freq_his.rename(rename_dict)
         
@@ -273,7 +303,8 @@ def get_data_model(climate_model_files, model, quantile, lon_bounds_t, lat_bound
         cooccurence_fut_ref_fut = compute_cooccurence(var_future, fut_quantile, crops)
         diff_freq_fut = (cooccurence_fut_ref_fut/cooccurence_his)-1
         # Create a dictionary to map old variable names to new variable names
-        rename_dict = {var: f"fut-reference_{variable}_{ssp}_{var}" for var in diff_freq_fut.data_vars}
+        rename_dict = {var: FILENAMES_DICT['future_reference_per_model'].format(variable=variable, 
+                                                                     ssp=ssp, var=var) for var in diff_freq_fut.data_vars}
         # Rename the variables in the Dataset
         diff_freq_fut_renamed = diff_freq_fut.rename(rename_dict)
         
@@ -286,57 +317,85 @@ def get_data_model(climate_model_files, model, quantile, lon_bounds_t, lat_bound
     
     return data_delta, data_frequency
 
+def fct_mean_per_county(ds, var_name, crops_shapefile):
+    # Create a GeoDataFrame from the dataset
+    gdf = create_gdf_from_ds(ds, var_name)
+    
+    # Spatial join between the points and the county polygons
+    points_polys = gpd.sjoin(gdf, crops_shapefile, how="left", op='intersects')
+    
+    # Compute weighted mean for each county
+    mean_per_county = points_polys.groupby('index_right')[var_name].mean()
+    
+    # Merge the results back to the original shapefile
+    result = pd.merge(crops_shapefile, mean_per_county, left_index=True, right_index=True, how='outer')
+    
+    return result
+
+def create_gdf_from_ds(ds, var_name):
+    # Create a meshgrid of the latitude and longitude
+    lon1, lat1 = np.meshgrid(ds.lon.values, ds.lat.values)
+    
+    # Flatten the meshgrid and create points
+    points = [Point(lon, lat) for lon, lat in zip(lon1.flatten(), lat1.flatten())]
+    
+    # Create a GeoDataFrame
+    gdf = gpd.GeoDataFrame({var_name: ds[var_name].values.flatten()}, crs="EPSG:4326", geometry=points)
+    
+    return gdf
 
 
-# """old functions to get mean per county"""
+def spatial_interpolation(gdf, crops_shapefile, var_name, ds):
+    """
+    Interpolate values for points within each county polygon.
+    """
+    
+    lon_t, lat_t = np.meshgrid(ds.lon.values, ds.lat.values)
+    coord_t = np.vstack((lon_t.reshape(-1), lat_t.reshape(-1))).T  
+    
+    data = ds[var_name].values.reshape(-1)
+    
+    # Extract the values
+    values = gdf[var_name].values
+    
+    # Prepare a list to store the results
+    interpolated_values = []
+    
+    # Get the indices of polygons with NaN values after mean computation
+    nan_indices = gdf.index[gdf[var_name].isnull()].tolist()
 
-# def fct_mean_per_county(ds, model, var_name, crops_shapefile):
-#     ds_out = regrid_cmip6(ds, model, var_name)
-#     gdf = create_gdf_from_ds(ds_out, var_name)            
-#     points_polys = gpd.sjoin(gdf, crops_shapefile, how="left")
-#     stats_pt = points_polys.groupby('index_right')[0].agg(['mean']) #nanmean
-#     result = pd.merge(crops_shapefile, stats_pt , left_index=True, right_index=True, how='outer')
-#     mean_per_county = np.asarray(result['mean'].values)
+    # Interpolate values for polygons with NaN values
+    for index, row in crops_shapefile.iterrows():
+        polygon = row.geometry
+        
+        if index in nan_indices:
+            # Find the centroid of the polygon
+            centroid = polygon.centroid
+            centroid_coords = np.array([[centroid.x, centroid.y]])
+            
+            # Find the nearest point in the temperature dataset
+            nearest_point_idx = find_nearest_point(centroid_coords, coord_t)
+            interpolated_value = data[nearest_point_idx]
+        else:
+            # Use the mean value for other polygons
+            interpolated_value = values[index]
+        
+        interpolated_values.append(interpolated_value)
     
-#     return mean_per_county
+    crops_shapefile[var_name] = interpolated_values
+    
+    return crops_shapefile
 
-# def regrid_cmip6(ds, model, var_name):
-    
-#     regridder_dir = '/Users/carmenst/Documents/Polybox/WCR/Conferences_summerschools/2022_10_Como/Project/Sequential_heat_crops/Data/Climate/regridder'
-#     regridder_file = regridder_dir+'/regridder_'+model+'.nc'
-    
-#     ds_lat = ds.lat.values
-#     ds_lon = ds.lon.values-360
-    
-#     ds_in = xr.Dataset(
-#         {
-#             "lat": (["lat"], ds_lat, {"units": "degrees_north"}),
-#             "lon": (["lon"], ds_lon, {"units": "degrees_east"}),
-#         }
-#     )
-    
-#     ds_out = xr.Dataset(
-#         {
-#             "lat": (["lat"], np.arange(np.min(ds_lat), np.max(ds_lat), 0.1), {"units": "degrees_north"}),
-#             "lon": (["lon"], np.arange(np.min(ds_lon), np.max(ds_lon), 0.1), {"units": "degrees_east"}),
-#         }
-#     )
-    
-    
-#     if os.path.isfile(regridder_file):
-#         regridder = xe.Regridder(ds_in, ds_out, 'conservative', weights=regridder_file)
-#     else:
-#         regridder = xe.Regridder(ds_in, ds_out, "conservative", ignore_degenerate=True)
-#         regridder.to_netcdf(regridder_file)        
-    
-#     regridded_ds = regridder(ds[var_name].values)    
-#     ds_out[var_name] = (('lat', 'lon'), regridded_ds)
-    
-#     return ds_out
 
-# def create_gdf_from_ds(ds, var_name):
-#     lon1, lat1 = np.meshgrid(ds.lon.values, ds.lat.values)
-#     geometry = gpd.points_from_xy(lon1.flatten(), lat1.flatten())
-#     gdf = gpd.GeoDataFrame(ds[var_name].values.flatten(), crs="EPSG:4326", geometry=geometry)
-    
-#     return gdf
+def find_nearest_point(centroid_coords, coord_t):
+    """
+    Find the index of the nearest point in the temperature dataset to the given coordinates.
+    """
+    tree = cKDTree(coord_t)
+    dists, idxs = tree.query(centroid_coords, k=1)
+    return idxs[0]
+
+
+
+
+
