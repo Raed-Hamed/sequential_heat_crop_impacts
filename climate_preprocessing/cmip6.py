@@ -1,105 +1,163 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Created on Thu Dec  1 13:41:04 2022
-
-@author: carmensteinmann
-"""
 from pathlib import Path
-import xarray as xr
 import os
 import sys
 import pathlib
+import numpy as np
 
 dir_preprocessing = os.path.join(str(pathlib.Path().resolve()))
-dir_data = os.path.join(dir_preprocessing, 'data')
 sys.path.append(dir_preprocessing)
-import historic_metric as fct_his
+import historic_metric as fct
+
+dir_data = os.path.join(dir_preprocessing, 'data')
 
 
 
-thresholds = [ ]
-lon_bounds_t = [235, 294] #longitudinal values range from 0 to 360
+lon_bounds = [-125, -66]
 lat_bounds = [24, 50]
-geo_area = 'USA'
+geo_area = 'us'
 years = (1980, 2022)
 nr_years = 40 
-quantile = 0.5
-crops = ['maize', 'wheat']
+crops = ['maize', 'wheat', 'soybean']
+#iterate over each climate model 
+variable = 'tasmax'
+# quantiles = [0.5, 0.75, 0.9]
+quantiles = [0.5]
 
-"""Get files"""
-import os
+from historic_metric import CROPS_DICT
+crops_dict = CROPS_DICT[geo_area]
 
-# Directory paths
-historic_dir = "/Users/carmenst/Documents/CLIMADA/own_projects/sequential_heat_crop_impacts/climate_preprocessing/data/input/CMIP6/historic"
-future_dir = "/Users/carmenst/Documents/CLIMADA/own_projects/sequential_heat_crop_impacts/climate_preprocessing/data/input/CMIP6/future"
-
-# Initialize a dictionary to store files by climate model
-climate_model_files = {}
-
-# Step 1: Determine climate model used in historic files and store historic file path
-for root, _, files in os.walk(historic_dir):
-    for filename in files:
-        parts = filename.split('_')
-        if len(parts) >= 2:
-            climate_model = parts[1]
-            historic_file = os.path.join(root, filename)
-            climate_model_files[climate_model] = {"historic_file": historic_file, "future_files": []}
-
-# Step 2: Find future files for each climate model
-for climate_model, data in climate_model_files.items():
-    for root, _, files in os.walk(future_dir):
-        for filename in files:
-            if filename.startswith(f"tasmax_{climate_model}"):
-                future_file = os.path.join(root, filename)
-                data["future_files"].append(future_file)
-
-#climate_model_files
+filenames_dict = fct.config_FILEPATHS(dir_data, geo_area)
 
 
-data_t =  Path(dir_data+'/input/CMIP6/ssp119/tasmax_CanESM5_ssp119_r1i1p1f1_2015-2100.nc') 
+climate_model_files = fct.get_model_list(filenames_dict['input']['dir_cmip_var'].format(variable=variable))
+climate_models = list(climate_model_files.keys())
 
 
-t_monthly = fct_his.sm_metrics(data_t, lon_bounds_t, lat_bounds, crops, variable='tasmax')
-t_monthly = t_monthly.drop_vars('height')
+for quantile in quantiles: 
+    Path(filenames_dict['calc']['dir_delta'].format(variable=variable)).mkdir(parents=True, exist_ok=True)
+    Path(filenames_dict['calc']['dir_frequency'].format(percentile=int(quantile*100))).mkdir(parents=True, exist_ok=True)
+    for model in climate_models:  
+        data_delta, data_frequency = fct.get_data_model(climate_model_files, model, quantile, lon_bounds, 
+                                                        lat_bounds, crops_dict, variable, filenames_dict, nr_years)
+
+        data_delta.to_netcdf(filenames_dict['calc']['delta_per_model'].format(model=model, variable=variable))
+        data_frequency.to_netcdf(filenames_dict['calc']['frequency_per_model'].format(percentile=int(quantile*100), model=model, variable=variable))
 
 
 
-#mean over the chosen time period
-final_year = t_monthly.year.max()
-start_year = final_year-nr_years+1
-t_sub = t_monthly.sel(year=slice(start_year, final_year))
-future_mean = t_sub.mean(dim='year')
-
-# compute the quantile
-t_quantile = t_sub.quantile(q=quantile, dim='year') 
-binary_data = xr.where(t_sub >= t_quantile, 1, 0)
-nr_exceedances = binary_data.sum('year')
 
 
-"""co-occurence"""
-# Initialize an empty dictionary to store the results
-concurrence_results = {}
 
-# Loop over each crop to compute concurrences
+
+import pandas as pd
+import xarray as xr
+
+var_input = 'tasmax'
+
+
+for model in climate_models[-5:]:
+    data_delta  = xr.open_dataset(filenames_dict['calc']['delta_per_model'].format(model=model, variable=var_input))
+    
+    ds_var_list = list(data_delta.data_vars.keys())
+
+    for crop in crops:
+        list_data_crop = []
+        
+        shape_usa_file = filenames_dict['input']['shape_crop'].format(crop=crop)
+        
+        crop_vars = [var for var in ds_var_list if crop in var]
+        
+        for var_name in crop_vars:
+                
+            crop, season, ssp = var_name.split('_')
+            
+        
+            result0 = fct.fct_mean_per_county_future(data_delta, var_name, shape_usa_file)
+            result = fct.spatial_interpolation_future(result0, shape_usa_file, var_name, data_delta)
+            
+            final_ds = result.rename(columns={var_name:'T'})
+            final_ds['season'] = season
+            final_ds['ssp'] = ssp
+            
+            list_data_crop.append(final_ds)
+        
+    
+        data_crop = pd.concat(list_data_crop, ignore_index=True)
+        
+        final_data_csv = data_crop.drop(columns='geometry')
+        
+        Path(filenames_dict['calc']['dir_delta_county'].format(crop=crop, variable=var_input)).mkdir(parents=True, exist_ok=True)
+        final_data_csv.to_csv(filenames_dict['calc']['delta_per_model_county'].format(variable=var_input, model=model, crop=crop), index=False)
+    
+
+
 for crop in crops:
-    spring_key = f"{crop}_spring"
-    summer_key = f"{crop}_summer"
+    list_data_crop = []
+    for model in climate_models:
+        filename= filenames_dict['calc']['delta_per_model_county'].format(variable=var_input, model=model, crop=crop)
+        df = pd.read_csv(filename)
+        df['model'] = model
+        list_data_crop.append(df)
+
+    data_crop = pd.concat(list_data_crop, ignore_index=True)
+    data_crop.to_csv(filenames_dict['cmip6']['csv_fut'].format(geo_area='us', crop=crop), index=False)
     
-    # Logical AND for spring and summer
-    both = (binary_data[spring_key] == 1) & (binary_data[summer_key] == 1)
+
+
+# import matplotlib.pyplot as plt
+# # Plot your shapefile
+# fig, ax = plt.subplots(figsize=(10, 8))
+# result.plot('delta_tasmax_ssp245_maize_spring', ax=ax)
+
+# # Set the xlim and ylim to the bbox
+# plt.xlim(lon_bounds[0], lon_bounds[1])
+# plt.ylim(lat_bounds[0], lat_bounds[1])
+
+# # Inspect the result
+# print(result)
+
+
+
+
+# def compute_counties_future(filenames_dict, ds_var, var_abbrev, crop, 
+#                           seasons=['spring', 'summer']):
+#     melted_list = []
+#     shape_usa_file = filenames_dict['input']['shape_crop'].format(crop=crop)
     
-    # Count the number of concurrences per lat/lon by summing along the 'year' dimension
-    concurrence = both.sum(dim='year')
+#     crop_vars = [var for var in ds_var_list if crop in var]
+#     for variable in enumerate(crop_vars):
+#         print('variable: ', variable)
+
+#         merged_data = create_gdf(ds_var, variable, shape_usa_file, years)
+        
+#         # Melt the DataFrame to have a single column for the years
+#         id_vars = [col for col in merged_data.columns if col not in years]
+#         melted_data = merged_data.melt(id_vars=id_vars, var_name='year', value_name=var_abbrev[idx_var])
+
+#         # Convert year column to numeric
+#         melted_data['year'] = pd.to_numeric(melted_data['year'])
+        
+#         #melted_data
+        
+#         melted_list.append(melted_data)
     
-    # Store the result in the dictionary
-    concurrence_results[f"{crop}_concurrence"] = concurrence
+#     return melted_list
 
-# Create a new Dataset to store these results
-concurrence_dataset = xr.Dataset(concurrence_results, coords={"lat": binary_data.lat, "lon": binary_data.lon})
+# import geopandas as gpd
 
-# Print the results
-print(concurrence_dataset)
+# def create_gdf(ds_var, var_name, shape_usa_file, years):
+#     # var_name = crop + '_' + season
+#     # crop, season = var_name.split('_')
+#     merged_data = gpd.read_file(shape_usa_file)
+#     mean_per_county_t = fct.fct_mean_per_county(ds_var, var_name, shape_usa_file)
+#     #years = np.arange(1980, 2022) #needs to be adapted
+#     for year in years: 
+#         year_data = mean_per_county_t[year]
+#         merged_data = merged_data.merge(year_data, left_index=True, right_index=True)
+
+#     # merged_data['season'] = season
+    
+#     return merged_data
 
 
 
@@ -107,24 +165,84 @@ print(concurrence_dataset)
 
 
 
-#HISTORIC COMPUTATIONS
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# from pathlib import Path
 # import os
 # import sys
 # import pathlib
-# from pathlib import Path
-# import xarray as xr
 # dir_preprocessing = os.path.join(str(pathlib.Path().resolve()))
-# sys.path.append(dir_preprocessing)
-# import historic_metric as fct_his
-
 # dir_data = os.path.join(dir_preprocessing, 'data')
-# data_t = Path(os.path.join(dir_data, 'input', 'CPC'))
-# data_m = Path(os.path.join(dir_data, 'input', 'SMroot_1980-2021_GLEAM_v3.6a_daily_remap05.nc'))
-# months = [3, 4, 5, 6, 7, 8]
-# thresholds = [15, 20.5, 28.8, 30.5]
-# lon_bounds_t = [235, 294] #longitudinal values range from 0 to 360
-# lon_bounds_m = [-125, -66] #longitudinal values range from -180 to 180
-# lat_bounds = [50, 24]
+# dir_cmip = Path(os.path.join(dir_data, 'input', 'CMIP6'))
+
+# sys.path.append(dir_preprocessing)
+# import historic_metric as fct
+
+# thresholds = [ ]
+# lon_bounds = [-125, -66]
+# lat_bounds = [24, 50]
 # geo_area = 'USA'
 # years = (1980, 2022)
-# monthly_t_metrics(data_t, lon_bounds_t, lat_bounds, months, thresholds, years)
+# nr_years = 40 
+# crops = ['maize', 'wheat']
+# #iterate over each climate model 
+# list_variables = ['tasmax','mrsos'] 
+# coord_drop = ['height', 'depth'] 
+# quantiles = [0.5, 0.75, 0.9]
+
+
+# for idx, variable in enumerate(list_variables): 
+#     dir_variable = Path(os.path.join(dir_cmip, variable))
+#     climate_model_files = fct.get_model_list(dir_variable)
+#     climate_models = list(climate_model_files.keys())
+    
+#     delta_dir = Path(os.path.join(dir_data, 'output', 'future', f'delta_{variable}'))
+#     Path(delta_dir).mkdir(parents=True, exist_ok=True)
+    
+#     for quantile in quantiles: 
+#         quantile_dir = Path(os.path.join(dir_data, 'output', 'future', f'quantile_{quantile}'))
+#         Path(quantile_dir).mkdir(parents=True, exist_ok=True)
+#         for model in climate_models:  
+#             data_delta, data_frequency = fct.get_data_model(climate_model_files, model, quantile, lon_bounds, lat_bounds, crops, variable, coord_drop[idx],nr_years)
+            
+#             output_delta = Path(os.path.join(delta_dir, f'{model}_{variable}_delta.nc'))
+#             data_delta.to_netcdf(output_delta)
+            
+#             if variable == 'tasmax':
+#                 output_frequency = Path(os.path.join(quantile_dir, f'{model}_{variable}_frequency_percentile{quantile}.nc'))
+#                 data_frequency.to_netcdf(output_frequency)
+  
+    
+
+
+
+# shape_usa = Path(os.path.join(dir_data, 'input', 'shapefiles', 'gadm36_USA_2.shp'))
+
+# import xarray as xr
+
+# # Example usage
+# # Define the path to the NetCDF file and shapefile
+# file_path = '/Users/carmenst/Documents/CLIMADA/own_projects/sequential_heat_crop_impacts/climate_preprocessing/data/output/future/delta_tasmax/ACCESS-CM2_tasmax_delta.nc'
+
+# # Load the dataset and shapefile
+# ds = xr.open_dataset(file_path)
+
+
+
+
