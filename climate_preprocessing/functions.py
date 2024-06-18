@@ -4,6 +4,7 @@ import numpy as np
 import xarray as xr
 from pathlib import Path
 
+
 SEASONS = ['spring', 'summer']
 
 
@@ -198,10 +199,10 @@ def extract_ssp(file_path):
     match = re.search(r'ssp(\d{3})', file_path)
     return match.group(0) if match else None
 
-def get_data_model(climate_model_files, model, quantile, lon_bounds, lat_bounds, 
+def get_data_model(climate_model_files, quantile, lon_bounds, lat_bounds, 
                    crops_dict, variable, filename_dict, nr_years=40, adapt_months=0):
     
-    his_path = climate_model_files[model]['historic_file']
+    his_path = climate_model_files['historic_file']
     var_historic = get_monthly_sub(his_path, lon_bounds, lat_bounds, crops_dict, variable, nr_years)
     # compute the quantile
     his_quantile = var_historic.quantile(q=quantile, dim='year') 
@@ -213,7 +214,7 @@ def get_data_model(climate_model_files, model, quantile, lon_bounds, lat_bounds,
     
     list_data_delta = []
     list_data_frequency = []
-    for file in climate_model_files[model]['future_files']:
+    for file in climate_model_files['future_files']:
         ssp = extract_ssp(file)
         crops_dict_fut = adapt_growing_season(crops_dict, adapt_months)
         var_future = get_monthly_sub(file, lon_bounds, lat_bounds, crops_dict_fut, variable, nr_years)
@@ -258,3 +259,31 @@ def adapt_growing_season(crops_dict, nr_months):
             # Subtract 1 from each integer in the list and store in the new dictionary
             new_dict[crop][season] = [value - nr_months for value in values]
     return new_dict
+
+def wrap_delta_frequency(config_data, var_input, nr_months):
+    
+    lon = config_data['study_area']['lon']
+    lat = config_data['study_area']['lat']
+    nr_years = config_data['study_area']['nr_years']
+    quantiles = config_data['study_area']['quantiles']
+    crops_dict = config_data['study_area']['crops_dict']
+    
+    climate_model_files = get_model_list(config_data['input']['dir_cmip_var'].format(variable=var_input))
+    climate_models = list(climate_model_files.keys())
+
+    for quantile in quantiles: 
+        Path(config_data['cmip6_grid']['dir_delta'].format(variable=var_input, nr_months=nr_months)).mkdir(parents=True, exist_ok=True)
+        Path(config_data['cmip6_grid']['dir_frequency'].format(nr_months=nr_months, percentile=int(quantile*100)), 
+             ).mkdir(parents=True, exist_ok=True)
+        for model in climate_models:  
+            data_delta, data_frequency = get_data_model(climate_model_files[model], quantile, lon, 
+                                                            lat, crops_dict, var_input, config_data, nr_years,
+                                                            nr_months)
+
+            data_delta.to_netcdf(config_data['cmip6_grid']['delta_per_model'].format(nr_months=nr_months, 
+                                                                                     model=model, 
+                                                                                     variable=var_input))
+            data_frequency.to_netcdf(config_data['cmip6_grid']['frequency_per_model'].format(nr_months=nr_months, 
+                                                                                             percentile=int(quantile*100), 
+                                                                                             model=model, variable=var_input))
+

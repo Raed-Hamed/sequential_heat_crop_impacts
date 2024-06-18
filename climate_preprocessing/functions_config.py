@@ -43,25 +43,27 @@ def create_config(dir_data, geo_area, months, lon_bounds, lat_bounds, his_years=
     annual_file = os.path.join(dir_calc_his, '{variable}_annual_'+f'{geo_area}.nc')
     
     dir_calc_cmip6 = os.path.join(dir_calc, 'future', f'{geo_area}')
-    dir_calc_cmip6grid = os.path.join(dir_calc_cmip6, 'CMIP6_grid')
+    dir_cmip6_adapt = os.path.join(dir_calc_cmip6, 'adapt-months{nr_months}')
+    
+    dir_calc_cmip6grid = os.path.join(dir_cmip6_adapt, 'CMIP6_grid')
     dir_delta = os.path.join(dir_calc_cmip6grid, 'delta_{variable}') 
     delta_per_model = os.path.join(dir_delta, '{model}_{variable}_delta.nc') 
     dir_frequency = os.path.join(dir_calc_cmip6grid, 'frequency_percentile_{percentile}') 
     frequency_per_model = os.path.join(dir_frequency, '{model}_{variable}_frequency_{percentile}.nc')
 
-    dir_calc_cmip6counties = os.path.join(dir_calc_cmip6, 'Per_county')
+    dir_calc_cmip6counties = os.path.join(dir_cmip6_adapt, 'Per_county')
     dir_calc_cmip6_county_crop = os.path.join(dir_calc_cmip6counties, '{crop}')
     
     dir_delta_county = os.path.join(dir_calc_cmip6_county_crop, 'delta_{variable}') 
     delta_per_model_county = os.path.join(dir_delta_county, '{model}_{variable}_delta.csv') 
-    dir_frequency_county = os.path.join(dir_calc_cmip6grid, 'frequency_percentile_{percentile}') 
+    dir_frequency_county = os.path.join(dir_calc_cmip6_county_crop, 'frequency_percentile_{percentile}') 
     frequency_per_model_county = os.path.join(dir_frequency_county, '{model}_{variable}_frequency_{percentile}.csv')
     
     dir_geo = os.path.join(f'{dir_data}', 'output', f'{geo_area}')
     dir_geo_crop = os.path.join(dir_geo, '{crop}')
     csv_his = os.path.join(dir_geo_crop, 'historic_{crop}_'+f'{geo_area}.csv')
     
-    csv_fut = os.path.join(dir_geo_crop, 'delta_{crop}_'+f'{geo_area}.csv')
+    csv_fut = os.path.join(dir_geo_crop, '{data_source}_{crop}_adapt-months{nr_months}_'+f'{geo_area}.csv')
     
     
     config_data = {'input': {'tasmax': tasmax,
@@ -86,23 +88,22 @@ def create_config(dir_data, geo_area, months, lon_bounds, lat_bounds, his_years=
                                 'dir_geo_crop': dir_geo_crop,
                                 'csv_his': csv_his,
                                 },
-                      'calc_cmip6_grid':{
-                                
-                                'dir_calc_cmip6':dir_calc_cmip6,
-                                'dir_calc_cmip6grid': dir_calc_cmip6grid,
-                                
+                      
+                      'cmip6_grid':{
+                                'dir': dir_calc_cmip6grid,
                                 'dir_delta': dir_delta,
                                 'dir_frequency':dir_frequency,
                                 'delta_per_model': delta_per_model,
                                 'frequency_per_model': frequency_per_model,
                                 },
-                        'calc_cmip6_counties':{
-                                'dir_delta_county': dir_delta_county,
-                                'dir_frequency_county':dir_frequency_county,
-                                'dir_calc_cmip6_county_crop': dir_calc_cmip6_county_crop,
-                                'delta_per_model_county': delta_per_model_county,
-                                'frequency_per_model_county': frequency_per_model_county,
-                                'csv_fut':csv_fut,
+                      
+                        'cmip6_counties':{
+                                'dir_delta': dir_delta_county,
+                                'dir_frequency':dir_frequency_county,
+                                'dir_crop': dir_calc_cmip6_county_crop,
+                                'delta_per_model': delta_per_model_county,
+                                'frequency_per_model': frequency_per_model_county,
+                                'csv_fut': csv_fut,
                                 },
         }
     

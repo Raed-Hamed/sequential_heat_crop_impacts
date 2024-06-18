@@ -5,6 +5,9 @@ import pandas as pd
 from shapely.geometry import Point
 from scipy.spatial import cKDTree
 import matplotlib.pyplot as plt
+import xarray as xr
+
+import functions as fct
 
 
 """MEAN PER COUNTRY FOR HISTORICAL DATA"""
@@ -208,6 +211,106 @@ def spatial_interpolation_future(gdf, shape_region, var_name, ds):
     crops_shapefile[var_name] = interpolated_values
     
     return crops_shapefile
+
+
+
+def wrap_cmip_counties(config_data, var_input, data_source, percentile=None, nr_months=0):
+    climate_model_files = fct.get_model_list(config_data['input']['dir_cmip_var'].format(variable=var_input))
+    climate_models = list(climate_model_files.keys())
+    
+    crops = list(config_data['study_area']['crops_dict'].keys())
+    
+    """CSV per model and crop"""
+    for model in climate_models:
+        
+        if data_source == 'delta':
+            data_delta  = xr.open_dataset(config_data['cmip6_grid']['delta_per_model'].format(model=model, 
+                                                                                              variable=var_input,
+                                                                                              nr_months=nr_months))
+            
+        elif data_source == 'percentile':
+            data_delta  = xr.open_dataset(config_data['cmip6_grid']['frequency_per_model'].format(model=model, 
+                                                                                                  variable=var_input, 
+                                                                                                  percentile=percentile,
+                                                                                                  nr_months=nr_months))
+       
+        ds_var_list = list(data_delta.data_vars.keys())
+
+        for crop in crops:
+            list_data_crop = []
+            shape_usa_file = config_data['input']['shape_crop'].format(crop=crop)
+            crop_vars = [var for var in ds_var_list if crop in var]
+            
+            for var_name in crop_vars:
+                    
+                if data_source == 'delta':
+                    crop, season, ssp = var_name.split('_')
+                    gdf_model = fct_mean_per_county_future(data_delta, var_name, shape_usa_file)
+                    final_ds = gdf_model.rename(columns={var_name:'T'})
+                    final_ds['season'] = season
+                
+                elif data_source == 'percentile':
+                    crop, _, ssp, reference = var_name.split('_')
+                    gdf_model = fct_mean_per_county_future(data_delta, var_name, shape_usa_file)
+                    final_ds = gdf_model.rename(columns={var_name:f'percentile_{percentile}'})
+                    final_ds['reference'] = reference
+            
+                
+                final_ds['ssp'] = ssp
+                
+                list_data_crop.append(final_ds)
+            
+            data_crop = pd.concat(list_data_crop, ignore_index=True)
+            final_data_csv = data_crop.drop(columns='geometry')
+            
+            if data_source == 'delta':
+                Path(config_data['cmip6_counties']['dir_delta'].format(crop=crop, variable=var_input, 
+                                                                              nr_months=nr_months)).mkdir(parents=True, exist_ok=True)
+                final_data_csv.to_csv(config_data['cmip6_counties']['delta_per_model'].format(variable=var_input, 
+                                                                                                     model=model, crop=crop,
+                                                                                                     nr_months=nr_months), index=False)
+            elif data_source == 'percentile':
+                Path(config_data['cmip6_counties']['dir_frequency'].format(crop=crop, variable=var_input, 
+                                                                                  percentile=percentile, nr_months=nr_months)).mkdir(parents=True, exist_ok=True)
+                final_data_csv.to_csv(config_data['cmip6_counties']['frequency_per_model'].format(variable=var_input, model=model, 
+                                                                                                         crop=crop, percentile=percentile,
+                                                                                                         nr_months=nr_months), index=False)
+
+
+def wrap_cmip_crop(config_data, var_input, data_source, percentile=None, nr_months=0):
+    climate_model_files = fct.get_model_list(config_data['input']['dir_cmip_var'].format(variable=var_input))
+    climate_models = list(climate_model_files.keys())
+    
+    # geo_area = config_data['study_area']['geo_area']
+    
+    crops = list(config_data['study_area']['crops_dict'].keys())
+    
+    for crop in crops:
+        list_data_crop = []
+        for model in climate_models:
+            if data_source == 'delta':
+                filename= config_data['cmip6_counties']['delta_per_model'].format(nr_months=nr_months, 
+                                                                                         variable=var_input, 
+                                                                                         model=model, crop=crop)
+                data_source_name = data_source
+            elif data_source == 'percentile':
+                filename = config_data['cmip6_counties']['frequency_per_model'].format(nr_months=nr_months, 
+                                                                                              variable=var_input, 
+                                                                                              model=model, 
+                                                                                              crop=crop, 
+                                                                                              percentile=percentile)
+                data_source_name = data_source+'_'+str(percentile)
+                
+                
+            df = pd.read_csv(filename)
+            df['model'] = model
+            list_data_crop.append(df)
+
+        data_crop = pd.concat(list_data_crop, ignore_index=True)
+
+        data_crop.to_csv(config_data['cmip6_counties']['csv_fut'].format(data_source=data_source_name, 
+                                                                         crop=crop, nr_months=nr_months), index=False)
+
 
 
 def plot_counties(df, year, var_name, season, crop, lon, lat):
