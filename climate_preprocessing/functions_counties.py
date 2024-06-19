@@ -215,10 +215,15 @@ def spatial_interpolation_future(gdf, shape_region, var_name, ds):
 
 
 def wrap_cmip_counties(config_data, var_input, data_source, percentile=None, nr_months=0):
-    climate_model_files = fct.get_model_list(config_data['input']['dir_cmip_var'].format(variable=var_input))
+    climate_model_files = fct.get_model_list(config_data, var_input)
     climate_models = list(climate_model_files.keys())
     
     crops = list(config_data['study_area']['crops_dict'].keys())
+    
+    if var_input == 'tasmax':
+        var_abbrev = 'T'
+    elif var_input == 'mrsos':
+        var_abbrev = 'M'
     
     """CSV per model and crop"""
     for model in climate_models:
@@ -246,7 +251,7 @@ def wrap_cmip_counties(config_data, var_input, data_source, percentile=None, nr_
                 if data_source == 'delta':
                     crop, season, ssp = var_name.split('_')
                     gdf_model = fct_mean_per_county_future(data_delta, var_name, shape_usa_file)
-                    final_ds = gdf_model.rename(columns={var_name:'T'})
+                    final_ds = gdf_model.rename(columns={var_name:var_abbrev})
                     final_ds['season'] = season
                 
                 elif data_source == 'percentile':
@@ -278,7 +283,7 @@ def wrap_cmip_counties(config_data, var_input, data_source, percentile=None, nr_
 
 
 def wrap_cmip_crop(config_data, var_input, data_source, percentile=None, nr_months=0):
-    climate_model_files = fct.get_model_list(config_data['input']['dir_cmip_var'].format(variable=var_input))
+    climate_model_files = fct.get_model_list(config_data, var_input)
     climate_models = list(climate_model_files.keys())
     
     # geo_area = config_data['study_area']['geo_area']
@@ -292,7 +297,7 @@ def wrap_cmip_crop(config_data, var_input, data_source, percentile=None, nr_mont
                 filename= config_data['cmip6_counties']['delta_per_model'].format(nr_months=nr_months, 
                                                                                          variable=var_input, 
                                                                                          model=model, crop=crop)
-                data_source_name = data_source
+                data_source_name = data_source + '-' + var_input
             elif data_source == 'percentile':
                 filename = config_data['cmip6_counties']['frequency_per_model'].format(nr_months=nr_months, 
                                                                                               variable=var_input, 

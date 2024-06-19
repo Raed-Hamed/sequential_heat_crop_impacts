@@ -6,6 +6,7 @@ from pathlib import Path
 
 
 SEASONS = ['spring', 'summer']
+DENSITY_WATER = 1000 #kg/m3
 
 
 def extract_bbox(file, lon_bounds, lat_bounds):
@@ -100,7 +101,13 @@ def metrics_from_timperiod(file, lon_bounds, lat_bounds, crops_dict, variable='S
             #monthly mean across months
             months = crop_var[f'{season}']
             months_selection = study_area.sel(time=study_area['time.month'].isin(months))
-            sum_metric.append(months_selection.groupby('time.year').mean('time')[variable])
+            monthly_means = months_selection.groupby('time.year').mean('time')[variable]
+            
+            if variable == 'mrsos':
+                sm_m3 = monthly_means / (DENSITY_WATER*months_selection.depth.values)
+                sum_metric.append(sm_m3)
+            else:
+                sum_metric.append(monthly_means)
             name_metric.append(crop+'_'+season)
 
     # Create an empty dataset
@@ -118,8 +125,9 @@ def metrics_from_timperiod(file, lon_bounds, lat_bounds, crops_dict, variable='S
 
 """CMIP 6"""
 
-def get_model_list(dir_cmip):
+def get_model_list(config_data, var_input='tasmax'):
     """Get dictionary with all CMIP6 files per climate model"""    
+    dir_cmip = config_data['input']['dir_cmip_var'].format(variable=var_input)
     historic_dir = Path(os.path.join(dir_cmip, 'historical'))
     future_dir = Path(os.path.join(dir_cmip, 'future'))
     
@@ -141,7 +149,8 @@ def get_model_list(dir_cmip):
         for root, _, files in os.walk(future_dir):
             for filename in files:
                 # Extract the climate model part from the filename
-                match = re.match(r'tasmax_([^_]+)_ssp\d+.*\.nc', filename)
+                file_structure = f'{var_input}_([^_]+)_ssp\d+.*\.nc'
+                match = re.match(file_structure, filename)
                 if match and match.group(1) == climate_model:
                     future_file = os.path.join(root, filename)
                     climate_model_files[climate_model]["future_files"].append(future_file)
@@ -268,7 +277,7 @@ def wrap_delta_frequency(config_data, var_input, nr_months):
     quantiles = config_data['study_area']['quantiles']
     crops_dict = config_data['study_area']['crops_dict']
     
-    climate_model_files = get_model_list(config_data['input']['dir_cmip_var'].format(variable=var_input))
+    climate_model_files = get_model_list(config_data, var_input)
     climate_models = list(climate_model_files.keys())
 
     for quantile in quantiles: 
@@ -286,4 +295,27 @@ def wrap_delta_frequency(config_data, var_input, nr_months):
             data_frequency.to_netcdf(config_data['cmip6_grid']['frequency_per_model'].format(nr_months=nr_months, 
                                                                                              percentile=int(quantile*100), 
                                                                                              model=model, variable=var_input))
+            
+def wrap_delta_sm(config_data, var_input='mrsos', nr_months=0):
+    
+    lon = config_data['study_area']['lon']
+    lat = config_data['study_area']['lat']
+    nr_years = config_data['study_area']['nr_years']
+    crops_dict = config_data['study_area']['crops_dict']
+    
+    climate_model_files = get_model_list(config_data, var_input)
+    climate_models = list(climate_model_files.keys())
+
+
+    Path(config_data['cmip6_grid']['dir_delta'].format(variable=var_input, nr_months=nr_months)).mkdir(parents=True, exist_ok=True)
+    
+    quantile = 0.5
+    for model in climate_models:  
+        data_delta, data_frequency = get_data_model(climate_model_files[model], quantile, lon, 
+                                                        lat, crops_dict, var_input, config_data, nr_years,
+                                                        nr_months)
+
+        data_delta.to_netcdf(config_data['cmip6_grid']['delta_per_model'].format(nr_months=nr_months, 
+                                                                                 model=model, 
+                                                                                 variable=var_input))
 
